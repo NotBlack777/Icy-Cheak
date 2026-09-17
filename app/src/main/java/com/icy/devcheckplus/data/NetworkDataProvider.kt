@@ -3,6 +3,7 @@ package com.icy.devcheckplus.data
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.wifi.ScanResult
 import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -126,11 +127,11 @@ object NetworkDataProvider {
 
     private fun getWifiStandardName(standard: Int): String {
         return when (standard) {
-            WifiInfo.WIFI_STANDARD_11N -> "Wi-Fi 4 (802.11n)"
-            WifiInfo.WIFI_STANDARD_11AC -> "Wi-Fi 5 (802.11ac)"
-            WifiInfo.WIFI_STANDARD_11AX -> "Wi-Fi 6 / 6E (802.11ax)"
-            WifiInfo.WIFI_STANDARD_11BE -> "Wi-Fi 7 (802.11be)"
-            WifiInfo.WIFI_STANDARD_LEGACY -> "Legacy (802.11a/b/g)"
+            ScanResult.WIFI_STANDARD_11N -> "Wi-Fi 4 (802.11n)"
+            ScanResult.WIFI_STANDARD_11AC -> "Wi-Fi 5 (802.11ac)"
+            ScanResult.WIFI_STANDARD_11AX -> "Wi-Fi 6 / 6E (802.11ax)"
+            ScanResult.WIFI_STANDARD_11BE -> "Wi-Fi 7 (802.11be)"
+            ScanResult.WIFI_STANDARD_LEGACY -> "Legacy (802.11a/b/g)"
             else -> "Standard $standard"
         }
     }
