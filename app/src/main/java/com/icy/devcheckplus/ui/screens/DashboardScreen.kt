@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +56,7 @@ import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.GlassDialog
 import com.icy.devcheckplus.ui.components.GlassEmptyState
 import com.icy.devcheckplus.ui.components.LocateMatchEffect
 import com.icy.devcheckplus.ui.components.LocalSearchFocus
@@ -300,11 +300,9 @@ fun DashboardScreen(
     }
 
     if (showClearDialog) {
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { showClearDialog = false },
-            shape = MaterialTheme.shapes.large,
-            containerColor = scheme.surface,
-            title = { Text("Unpin everything?", style = MaterialTheme.typography.titleMedium) },
+            title = "Unpin everything?",
             text = {
                 Text(
                     text = "This removes all ${pins.size} pinned rows from the dashboard. The underlying data is untouched.",

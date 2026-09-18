@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -82,17 +81,12 @@ fun ExportReportDialog(onDismiss: () -> Unit) {
 
     val scheme = MaterialTheme.colorScheme
 
-    AlertDialog(
+    // Frosted glass, not Material's flat dialog surface: a dialog is one small
+    // panel shown while nothing scrolls, which is exactly what the frosted layer
+    // is for (and it falls back to a solid tint in OLED mode).
+    GlassDialog(
         onDismissRequest = { if (busy == null) onDismiss() },
-        shape = MaterialTheme.shapes.large,
-        containerColor = scheme.surface,
-        title = {
-            Text(
-                text = "Export device report",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        },
+        title = "Export device report",
         text = {
             Column {
                 Text(
@@ -144,16 +138,16 @@ fun ExportReportDialog(onDismiss: () -> Unit) {
                 Text(if (defaultFormat != null) "Export ${primaryFormat.label}" else primaryFormat.label)
             }
         },
+        // GlassDialog lays both slots out in one end-aligned row, so the inner Row
+        // the AlertDialog version needed is gone.
         dismissButton = {
-            Row {
-                if (secondaryFormat != null) {
-                    TextButton(onClick = { start(secondaryFormat) }, enabled = busy == null) {
-                        Text(secondaryFormat.label)
-                    }
+            if (secondaryFormat != null) {
+                TextButton(onClick = { start(secondaryFormat) }, enabled = busy == null) {
+                    Text(secondaryFormat.label)
                 }
-                TextButton(onClick = onDismiss, enabled = busy == null) {
-                    Text("Cancel")
-                }
+            }
+            TextButton(onClick = onDismiss, enabled = busy == null) {
+                Text("Cancel")
             }
         }
     )

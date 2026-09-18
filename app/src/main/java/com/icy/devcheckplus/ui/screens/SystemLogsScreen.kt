@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,6 +60,7 @@ import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import com.icy.devcheckplus.ui.theme.AccentRed
+import com.icy.devcheckplus.ui.components.GlassCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -239,21 +241,23 @@ fun LogEntryCard(entry: LogcatEntry) {
     }
 
     val scheme = MaterialTheme.colorScheme
-    Card(
+    // Glass rows: the log list is the longest in the app, so it gets the gradient
+    // tint, hairline border and sheen but no blurred decoration layer.
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 3.dp)
             .clip(RoundedCornerShape(8.dp))
-            // Pulse drawn on top of the card instead of behind it, because a Card
-            // paints its own container colour after the caller's modifiers.
+            // Pulse drawn on top of the card instead of behind it: GlassCard paints
+            // its own layers inside the caller's modifier chain, so drawing after
+            // the content still lands above them.
             .drawWithContent {
                 drawContent()
                 if (highlight > 0f) drawRect(color = scheme.primary, alpha = highlight)
             },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(8.dp),
+        frosted = false,
+        contentPadding = PaddingValues(0.dp)
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             Row(

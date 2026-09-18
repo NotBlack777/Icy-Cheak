@@ -128,34 +128,58 @@ fun PickerSheet(
     // flattens while it is being flicked exactly like a screen's cards do.
     val scrollState = rememberScrollState()
     TrackScrollActivity(scrollState)
+    val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = scheme.surface
+        shape = sheetShape,
+        // Frosted glass rather than Material's flat sheet surface. The container is
+        // transparent and the panel below paints the same layers every card does,
+        // which also means the sheet follows the gradient style, the OLED fallback
+        // and the scroll cross-fade like everything else.
+        containerColor = Color.Transparent,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
+        // Material's own handle would float over the transparent strip above the
+        // panel, so the sheet draws its pill inside the glass instead.
+        dragHandle = null
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(scrollState)
-                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = scheme.onSurface
-            )
-            if (!subtitle.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant
+        Box(modifier = Modifier.fillMaxWidth()) {
+            GlassBackdrop(shape = sheetShape, modifier = Modifier.matchParentSize())
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 12.dp, bottom = 14.dp)
+                        .width(38.dp)
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(scheme.onSurface.copy(alpha = 0.30f))
                 )
+
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = scheme.onSurface
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+                content()
             }
-            Spacer(modifier = Modifier.height(14.dp))
-            content()
         }
     }
 }

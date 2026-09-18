@@ -3,8 +3,10 @@ package com.icy.devcheckplus.ui.screens
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +54,7 @@ import com.icy.devcheckplus.privilege.PrivilegeMode
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
+import com.icy.devcheckplus.ui.components.GlassCard
 import kotlinx.coroutines.launch
 
 @Composable
@@ -67,10 +71,11 @@ fun OnboardingScreen(
     val scrollState = rememberScrollState()
     TrackScrollActivity(scrollState)
 
+    // No opaque root fill: the app-wide ambient layer (MainActivity) is behind the
+    // wizard too, so it gets the same backdrop as every category screen.
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp)
             .verticalScroll(scrollState),
         verticalArrangement = Arrangement.SpaceBetween
@@ -223,15 +228,33 @@ fun PrivilegeOptionCard(
     icon: ImageVector,
     onSelect: () -> Unit
 ) {
-    Card(
+    // Glass like every other card in the app, with the selection shown as a tint
+    // *over* the gradient (GlassCard's overlay slot) plus a primary border, rather
+    // than by replacing the surface colour.
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onSelect() },
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onSelect() }
+            .then(
+                if (isSelected) {
+                    Modifier.border(
+                        width = 1.5.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                } else {
+                    Modifier
+                }
+            ),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface
-        ),
-        border = if (isSelected) CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary)) else null
+        frosted = false,
+        contentPadding = PaddingValues(0.dp),
+        overlay = if (isSelected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f)
+        } else {
+            Color.Transparent
+        }
     ) {
         Row(
             modifier = Modifier

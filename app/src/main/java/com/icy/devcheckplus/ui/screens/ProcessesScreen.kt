@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,6 +50,7 @@ import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.locateRowIndex
 import com.icy.devcheckplus.ui.components.rememberMatchHighlight
 import com.icy.devcheckplus.ui.theme.AccentGreen
+import com.icy.devcheckplus.ui.components.GlassCard
 import kotlinx.coroutines.launch
 
 @Composable
@@ -183,13 +185,15 @@ fun ProcessCard(item: ProcessItem) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(12.dp)
+    // Glass like the grouped panels elsewhere: the same gradient tint, hairline
+    // border and sheen, without the blurred decoration layer — a process list can
+    // be hundreds of rows long, and one offscreen blur layer per row is exactly the
+    // cost the frosted flag exists to avoid.
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        frosted = false,
+        contentPadding = PaddingValues(0.dp)
     ) {
         Row(
             modifier = Modifier

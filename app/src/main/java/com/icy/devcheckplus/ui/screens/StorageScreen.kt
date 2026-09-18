@@ -4,6 +4,7 @@ import com.icy.devcheckplus.data.PinnableCategory
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.SdStorage
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
@@ -46,6 +47,7 @@ import com.icy.devcheckplus.ui.components.LocateMatchEffect
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.locateRowIndex
 import com.icy.devcheckplus.ui.components.locateSectionIndex
+import com.icy.devcheckplus.ui.components.GlassCard
 
 @Composable
 fun StorageScreen(
@@ -144,14 +146,15 @@ fun StorageScreen(
 @Composable
 fun PartitionCard(item: PartitionItem) {
     val scheme = MaterialTheme.colorScheme
-    Card(
+    // Same glass treatment as the grouped panels: gradient tint, hairline border
+    // and sheen, no blur layer (a partition list is long and scrolls fast).
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
+        frosted = false,
+        contentPadding = PaddingValues(0.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(

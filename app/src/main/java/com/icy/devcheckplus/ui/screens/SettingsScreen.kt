@@ -49,7 +49,6 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Wallpaper
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
@@ -91,11 +90,11 @@ import com.icy.devcheckplus.privilege.PrivilegeMode
 import com.icy.devcheckplus.privilege.PrivilegeStatus
 import com.icy.devcheckplus.ui.components.AccentGrid
 import com.icy.devcheckplus.ui.components.CustomGradientSheet
-import com.icy.devcheckplus.ui.components.AmbientBackground
 import com.icy.devcheckplus.ui.components.BackgroundAnimationGrid
 import com.icy.devcheckplus.ui.components.ExportFormatSheet
 import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassRow
+import com.icy.devcheckplus.ui.components.GlassDialog
 import com.icy.devcheckplus.ui.components.GlassGroupBox
 import com.icy.devcheckplus.ui.components.GradientGrid
 import com.icy.devcheckplus.ui.components.HapticSwitch
@@ -161,9 +160,10 @@ fun SettingsScreen(
     }
     val scope = rememberCoroutineScope()
 
+    // No AmbientBackground here: since the app-wide polish pass the ambient layer
+    // is painted once at the root of MainActivity, behind every category screen,
+    // so Settings would otherwise be drawing a second full-screen canvas.
     Box(modifier = modifier.fillMaxSize()) {
-        AmbientBackground(modifier = Modifier.matchParentSize())
-
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -291,11 +291,9 @@ fun SettingsScreen(
             val oled = AppSettingsStore.themeMode
                 .collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
                 .value == ThemeMode.OLED
-            AlertDialog(
+            GlassDialog(
                 onDismissRequest = { showAnimationWarning = false },
-                shape = MaterialTheme.shapes.large,
-                containerColor = MaterialTheme.colorScheme.surface,
-                title = { Text("Keep the animation on?", style = MaterialTheme.typography.titleMedium) },
+                title = "Keep the animation on?",
                 text = {
                     Text(
                         text = if (oled) {

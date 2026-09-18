@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -57,6 +58,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -71,7 +74,9 @@ import com.icy.devcheckplus.data.UpdateRepository
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.navigation.NavCategory
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.ui.components.AmbientBackground
 import com.icy.devcheckplus.ui.components.ExportReportDialog
+import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.FrameMetricsPrefEffect
 import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
@@ -182,6 +187,12 @@ fun MainAppContainer() {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // The single ambient layer for the whole app — onboarding included. It sits
+        // above the window background and below everything else, so the translucent
+        // top bar, the frosted drawer and every glass card read against the same
+        // drifting gradient (or the same flat wash, in OLED mode / while scrolling).
+        AmbientBackground(modifier = Modifier.matchParentSize())
+
         if (showOnboarding) {
             OnboardingScreen(onFinished = {
                 showOnboarding = false
@@ -242,8 +253,17 @@ fun MainDashboardScreen(
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier.width(300.dp),
-                drawerContainerColor = MaterialTheme.colorScheme.surface
+                // Transparent on purpose: the drawer paints the same frosted glass
+                // as every other elevated surface, with the app's ambient layer
+                // showing through its rounded edge, instead of a flat surface fill.
+                drawerContainerColor = Color.Transparent,
+                drawerShape = RectangleShape
             ) {
+                GlassCard(
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
                 // Drawer Header
                 Column(
                     modifier = Modifier
@@ -306,6 +326,7 @@ fun MainDashboardScreen(
                     fontSize = 11.sp,
                     modifier = Modifier.padding(16.dp)
                 )
+                }
             }
         }
     ) {
@@ -341,11 +362,12 @@ fun MainDashboardScreen(
                 }
             }
         ) { innerPadding ->
+            // Transparent: the app-wide ambient layer behind the Scaffold shows
+            // through, including behind the translucent top bar.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .background(MaterialTheme.colorScheme.background)
             ) {
                 AnimatedContent(
                     targetState = currentCategory,

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
 import com.icy.devcheckplus.ui.theme.solidSurface
 import com.icy.devcheckplus.ui.theme.surfaceBrush
@@ -65,6 +68,7 @@ fun GlassCard(
     shape: Shape = RoundedCornerShape(20.dp),
     contentPadding: PaddingValues = PaddingValues(18.dp),
     frosted: Boolean = true,
+    overlay: Color = Color.Transparent,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val spec = LocalGlassSpec.current
@@ -101,6 +105,13 @@ fun GlassCard(
             modifier = Modifier.matchParentSize()
         )
 
+        // Optional tint *between* the glass and the content: how a row shows it is
+        // selected without giving up the gradient underneath (see the onboarding
+        // privilege cards and any list row with an active state).
+        if (overlay != Color.Transparent) {
+            Box(modifier = Modifier.matchParentSize().background(overlay))
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -108,6 +119,110 @@ fun GlassCard(
             content = content
         )
     }
+}
+
+/**
+ * Frosted-glass dialog — the app's liquid-glass surface instead of Material's flat
+ * `scheme.surface` dialog background.
+ *
+ * Built on [Dialog] rather than `AlertDialog` deliberately: an AlertDialog paints
+ * its own Surface around the slots, and a dialog is a *separate window*, so a
+ * translucent container there cannot sample the content behind it. The honest way
+ * to get a frosted panel is to draw the layers a [GlassCard] draws — blurred
+ * decoration, translucent gradient tint, hairline border, top sheen — and lay the
+ * familiar dialog slots out inside them. Slot order, spacing and end-aligned
+ * buttons follow Material's dialog metrics, so only the surface changes, not how
+ * these read.
+ *
+ * Blur costs one offscreen layer, and a dialog is a single small surface shown
+ * while nothing is scrolling, so this is exactly the case the frosted layer was
+ * written for; in OLED mode [com.icy.devcheckplus.ui.theme.GlassSpec] reports a 0dp
+ * radius and the panel falls back to a solid tint on its own.
+ */
+@Composable
+fun GlassDialog(
+    onDismissRequest: () -> Unit,
+    title: String,
+    modifier: Modifier = Modifier,
+    /** Override for a title that has to carry a warning (Console's risk prompt). */
+    titleColor: Color? = null,
+    icon: ImageVector? = null,
+    text: (@Composable ColumnScope.() -> Unit)? = null,
+    confirmButton: @Composable RowScope.() -> Unit,
+    dismissButton: (@Composable RowScope.() -> Unit)? = null,
+    properties: DialogProperties = DialogProperties()
+) {
+    val scheme = MaterialTheme.colorScheme
+    Dialog(onDismissRequest = onDismissRequest, properties = properties) {
+        GlassCard(
+            modifier = modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 18.dp)
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = scheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .size(26.dp)
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = titleColor ?: scheme.onSurface
+            )
+            if (text != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                text()
+            }
+            Spacer(modifier = Modifier.height(22.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (dismissButton != null) dismissButton()
+                confirmButton()
+            }
+        }
+    }
+}
+
+/**
+ * Just the glass *layers* — blurred decoration, translucent gradient tint,
+ * hairline border, top sheen — with no content and no padding, for painting a
+ * frosted surface behind something that supplies its own layout: a bottom sheet's
+ * contents, a navigation drawer, an app bar.
+ *
+ * Use it with `Modifier.matchParentSize()` inside a [Box] whose size is decided by
+ * the content it is backing, so the glass never drives layout.
+ */
+@Composable
+fun BoxScope.GlassBackdrop(
+    shape: Shape,
+    modifier: Modifier = Modifier,
+    frosted: Boolean = true,
+    surfaceAlpha: Float = LocalGlassSpec.current.cardAlpha
+) {
+    val spec = LocalGlassSpec.current
+    val scheme = MaterialTheme.colorScheme
+    GlassSurfaceLayer(
+        shape = shape,
+        surfaceAlpha = surfaceAlpha,
+        blurRadius = spec.cardBlurRadius,
+        borderAlpha = spec.borderAlpha,
+        sheenAlpha = spec.sheenAlpha,
+        frosted = frosted,
+        frostPrimary = scheme.primary,
+        frostSecondary = scheme.tertiary,
+        bottomHairline = false,
+        modifier = modifier
+    )
 }
 
 /**
