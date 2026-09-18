@@ -44,11 +44,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.LogcatDataProvider
 import com.icy.devcheckplus.model.LogcatEntry
+import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import com.icy.devcheckplus.ui.theme.AccentRed
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+private const val LOG_REFRESH_INTERVAL_MS = 3_000L
+private const val LOG_LINE_LIMIT = 150
 
 @Composable
 fun SystemLogsScreen(
@@ -60,12 +65,13 @@ fun SystemLogsScreen(
     var loading by remember { mutableStateOf(true) }
     var autoRefresh by remember { mutableStateOf(false) }
     var selectedLevel by remember { mutableStateOf("ALL") }
+    val foreground = rememberIsForeground()
 
     val scope = rememberCoroutineScope()
 
     fun fetchLogs() {
         scope.launch {
-            val (list, err) = LogcatDataProvider.fetchRecentLogs(150)
+            val (list, err) = LogcatDataProvider.fetchRecentLogs(LOG_LINE_LIMIT)
             logs = list
             errorMessage = err
             loading = false
@@ -76,10 +82,13 @@ fun SystemLogsScreen(
         fetchLogs()
     }
 
-    LaunchedEffect(autoRefresh) {
-        while (autoRefresh) {
-            delay(2500)
-            val (list, err) = LogcatDataProvider.fetchRecentLogs(150)
+    // Fixed-cadence polling that stops when auto-refresh is off, when the tab is
+    // switched away (this leaves composition) or when the app is backgrounded.
+    LaunchedEffect(autoRefresh, foreground) {
+        if (!autoRefresh || !foreground) return@LaunchedEffect
+        while (isActive) {
+            delay(LOG_REFRESH_INTERVAL_MS)
+            val (list, err) = LogcatDataProvider.fetchRecentLogs(LOG_LINE_LIMIT)
             logs = list
             errorMessage = err
         }

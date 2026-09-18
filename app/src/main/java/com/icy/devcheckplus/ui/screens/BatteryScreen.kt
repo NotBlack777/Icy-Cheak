@@ -4,8 +4,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.DeviceThermostat
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,8 +26,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.BatteryDataProvider
+import com.icy.devcheckplus.data.LiveMetrics
 import com.icy.devcheckplus.model.InfoSection
+import com.icy.devcheckplus.ui.components.ChartSeries
+import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.InfoSectionCard
+import com.icy.devcheckplus.ui.components.LiveChartCard
+import com.icy.devcheckplus.ui.components.rememberLiveMetrics
+import com.icy.devcheckplus.ui.theme.AccentGreen
+import com.icy.devcheckplus.ui.theme.AccentOrange
+import kotlin.math.abs
 
 @Composable
 fun BatteryScreen(
@@ -32,10 +46,15 @@ fun BatteryScreen(
     var sections by remember { mutableStateOf<List<InfoSection>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
 
+    // One-shot deep read (cycle count / charge_full need privileged shells, so it
+    // is deliberately not put on a polling loop). The charts below are live.
     LaunchedEffect(Unit) {
         sections = BatteryDataProvider.getBatterySections(context)
         loading = false
     }
+
+    val showCharts = searchQuery.isBlank()
+    val metrics = rememberLiveMetrics(enabled = showCharts)
 
     if (loading) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -58,7 +77,7 @@ fun BatteryScreen(
             }
         }
 
-        if (filteredSections.isEmpty()) {
+        if (filteredSections.isEmpty() && !showCharts) {
             Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     text = "No battery items match \"$searchQuery\"",
@@ -68,13 +87,123 @@ fun BatteryScreen(
             }
         } else {
             LazyColumn(modifier = modifier.fillMaxSize()) {
-                items(filteredSections) { sec ->
+                if (showCharts) {
+                    item(key = "battery_telemetry_header") {
+                        GlassSectionHeader(
+                            title = "LIVE TELEMETRY",
+                            icon = Icons.Default.Speed,
+                            supporting = if (metrics.batteryLevel >= 0) "${metrics.batteryLevel}% • ${if (metrics.batteryCharging) "charging" else "discharging"}" else "1 s sampling"
+                        )
+                    }
+                    item(key = "battery_chart_temp") {
+                        TemperatureChart(metrics = metrics)
+                    }
+                    item(key = "battery_chart_drain") {
+                        DrainRateChart(metrics = metrics)
+                    }
+                    item(key = "battery_details_header") {
+                        GlassSectionHeader(title = "DETAILS", icon = Icons.Default.BatteryChargingFull)
+                    }
+                }
+                items(filteredSections, key = { it.title }) { sec ->
                     InfoSectionCard(section = sec)
                 }
-                item {
+                item(key = "battery_bottom_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
     }
+}
+
+@Composable
+private fun TemperatureChart(metrics: LiveMetrics) {
+    val samples = remember(metrics.batteryTempC) { metrics.batteryTempC.filter { it > 0f } }
+    val domain = remember(samples) {
+        if (samples.size < 2) {
+            0f to 0f
+        } else {
+            val low = (samples.min() - 1.5f).coerceAtLeast(0f)
+            val high = samples.max() + 1.5f
+            low to high
+        }
+    }
+    val series = remember(metrics.batteryTempC) {
+        listOf(
+            ChartSeries(
+                label = "Temperature",
+                color = AccentOrange,
+                points = metrics.batteryTempC,
+                strokeWidthDp = 2.6f
+            )
+        )
+    }
+
+    LiveChartCard(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
+        title = "Battery temperature",
+        icon = Icons.Default.DeviceThermostat,
+        subtitle = if (metrics.temperatureReadable) "Pack thermistor • live" else "Thermistor not reporting",
+        value = if (samples.isNotEmpty()) String.format("%.1f °C", metrics.latestTempC) else "—",
+        valueColor = AccentOrange,
+        series = series,
+        version = metrics.version,
+        areaSeriesIndex = 0,
+        yMin = domain.first,
+        yMax = domain.second,
+        topLabel = if (domain.second > domain.first) String.format("%.1f °C", domain.second) else null,
+        bottomLabel = if (domain.second > domain.first) String.format("%.1f °C", domain.first) else null,
+        chartHeight = 116.dp
+    )
+}
+
+@Composable
+private fun DrainRateChart(metrics: LiveMetrics) {
+    val scheme = MaterialTheme.colorScheme
+    val samples = remember(metrics.batteryCurrentMa) { metrics.batteryCurrentMa.filter { abs(it) > 0.5f } }
+    val domain = remember(samples) {
+        if (samples.size < 2) {
+            0f to 0f
+        } else {
+            val low = samples.min()
+            val high = samples.max()
+            val pad = ((high - low).coerceAtLeast(50f)) * 0.2f
+            (low - pad) to (high + pad)
+        }
+    }
+    val charging = metrics.latestCurrentMa > 0f
+    val color = if (charging) AccentGreen else scheme.primary
+    val series = remember(metrics.batteryCurrentMa, color) {
+        listOf(
+            ChartSeries(
+                label = "Current",
+                color = color,
+                points = metrics.batteryCurrentMa,
+                strokeWidthDp = 2.6f
+            )
+        )
+    }
+
+    val latestMa = metrics.latestCurrentMa
+
+    LiveChartCard(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
+        title = "Charge / drain rate",
+        icon = Icons.Default.Bolt,
+        subtitle = when {
+            !metrics.currentReadable -> "Current sensor not reporting"
+            charging -> "Charging — positive current"
+            else -> "Discharging — negative current"
+        },
+        value = if (samples.isNotEmpty()) String.format("%+.0f mA", latestMa) else "—",
+        valueColor = color,
+        series = series,
+        version = metrics.version,
+        areaSeriesIndex = 0,
+        yMin = domain.first,
+        yMax = domain.second,
+        topLabel = if (domain.second > domain.first) String.format("%.0f mA", domain.second) else null,
+        bottomLabel = if (domain.second > domain.first) String.format("%.0f mA", domain.first) else null,
+        chartHeight = 116.dp
+    )
 }

@@ -3,6 +3,7 @@ package com.icy.devcheckplus.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,8 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,7 +30,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.SensorLiveMonitor
 import com.icy.devcheckplus.model.SensorLiveData
+import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.MiniGraph
+import com.icy.devcheckplus.ui.components.rememberIsForeground
 
 @Composable
 fun SensorsScreen(
@@ -39,12 +43,13 @@ fun SensorsScreen(
     val context = LocalContext.current
     val monitor = remember { SensorLiveMonitor(context) }
     val sensorsMap by monitor.sensorsFlow.collectAsState()
+    val foreground = rememberIsForeground()
 
-    DisposableEffect(Unit) {
-        monitor.startListening()
-        onDispose {
-            monitor.stopListening()
-        }
+    // Sampling only happens while this screen is composed AND the app is in the
+    // foreground; stopListening() also tears down the sensor worker thread.
+    DisposableEffect(foreground) {
+        if (foreground) monitor.startListening()
+        onDispose { monitor.stopListening() }
     }
 
     val sensorList = remember(sensorsMap) {
@@ -70,70 +75,76 @@ fun SensorsScreen(
         }
     } else {
         LazyColumn(modifier = modifier.fillMaxSize()) {
-            items(filteredSensors) { sensor ->
+            item(key = "sensors_header") {
+                GlassSectionHeader(
+                    title = "LIVE SENSORS",
+                    icon = Icons.Default.Sensors,
+                    supporting = "500 ms sampling"
+                )
+            }
+            items(filteredSensors, key = { it.type }) { sensor ->
                 SensorGraphCard(sensor = sensor)
             }
-            item {
+            item(key = "sensors_bottom_spacer") {
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
 }
 
+/**
+ * One sensor card. [SensorLiveData] is [androidx.compose.runtime.Immutable] and
+ * keeps its identity unless that specific sensor published a new reading, so
+ * untouched cards skip recomposition entirely.
+ */
 @Composable
-fun SensorGraphCard(sensor: SensorLiveData) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+private fun SensorGraphCard(sensor: SensorLiveData) {
+    val scheme = MaterialTheme.colorScheme
+
+    GlassCard(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
+        shape = RoundedCornerShape(18.dp),
+        contentPadding = PaddingValues(16.dp),
+        frosted = false
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = sensor.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Vendor: ${sensor.vendor} • Power: ${sensor.power} mA",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = sensor.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.onSurface
+                )
+                Text(
+                    text = "Vendor: ${sensor.vendor} • Power: ${sensor.power} mA",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Values readout
-            val valuesStr = sensor.values.joinToString("  |  ") {
-                String.format("%.2f", it)
-            }
-            Text(
-                text = "Live Output: [ $valuesStr ]",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Real-time canvas graph
-            MiniGraph(
-                history = sensor.history,
-                lineColor = MaterialTheme.colorScheme.primary
-            )
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val valuesStr = sensor.values.joinToString("  |  ") {
+            String.format("%.2f", it)
+        }
+        Text(
+            text = "Live output: [ $valuesStr ]",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = scheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        MiniGraph(
+            history = sensor.history,
+            lineColor = scheme.primary
+        )
     }
 }

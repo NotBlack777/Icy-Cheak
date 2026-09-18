@@ -1,5 +1,7 @@
 package com.icy.devcheckplus.model
 
+import androidx.compose.runtime.Immutable
+
 data class ProcessItem(
     val pid: Int,
     val user: String,
@@ -41,6 +43,12 @@ data class LogcatEntry(
     val message: String
 )
 
+/**
+ * Marked [Immutable] so Compose can skip recomposition for sensor cards whose
+ * instance did not change — the monitor publishes a new instance only for the
+ * sensors that actually reported.
+ */
+@Immutable
 data class SensorLiveData(
     val name: String,
     val type: Int,

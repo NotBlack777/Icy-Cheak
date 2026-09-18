@@ -25,6 +25,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -57,8 +60,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.navigation.NavCategory
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.ui.components.ExportReportDialog
+import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
 import com.icy.devcheckplus.ui.screens.BatteryScreen
 import com.icy.devcheckplus.ui.screens.HardwareScreen
@@ -78,7 +84,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            DevCheckPlusTheme {
+            // Appearance prefs are mirrored into StateFlows by AppSettingsStore, so a
+            // theme change in Settings is applied app-wide on the next frame.
+            val themeMode by AppSettingsStore.themeMode.collectAsState()
+            val dynamicColor by AppSettingsStore.dynamicColor.collectAsState()
+
+            DevCheckPlusTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
                 MainAppContainer()
             }
         }
@@ -113,6 +124,7 @@ fun MainDashboardScreen(
     val scope = rememberCoroutineScope()
     var currentCategory by remember { mutableStateOf(NavCategory.HARDWARE) }
     var searchQuery by remember { mutableStateOf("") }
+    var showExportDialog by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val privilegeStatus by PrivilegeManager.status.collectAsState()
 
@@ -188,11 +200,24 @@ fun MainDashboardScreen(
         }
     ) {
         Scaffold(
+            // The Settings tab has its own Export card, so the FAB hides there.
+            floatingActionButton = {
+                if (currentCategory != NavCategory.SETTINGS) {
+                    FloatingActionButton(
+                        onClick = { showExportDialog = true },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Export device report"
+                        )
+                    }
+                }
+            },
+            floatingActionButtonPosition = FabPosition.End,
             topBar = {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 3.dp
-                ) {
+                GlassTopBar(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -291,6 +316,10 @@ fun MainDashboardScreen(
                     }
                 }
             }
+        }
+
+        if (showExportDialog) {
+            ExportReportDialog(onDismiss = { showExportDialog = false })
         }
     }
 }
