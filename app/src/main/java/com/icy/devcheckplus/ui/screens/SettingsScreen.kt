@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Adb
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
@@ -32,10 +33,12 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -82,6 +85,7 @@ import com.icy.devcheckplus.privilege.PrivilegeStatus
 import com.icy.devcheckplus.ui.components.AccentGrid
 import com.icy.devcheckplus.ui.components.AmbientBackground
 import com.icy.devcheckplus.ui.components.BackgroundAnimationGrid
+import com.icy.devcheckplus.ui.components.ExportFormatSheet
 import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassRow
 import com.icy.devcheckplus.ui.components.GlassGroupBox
@@ -99,6 +103,8 @@ import com.icy.devcheckplus.ui.components.TileIconPreview
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.displayIcon
 import com.icy.devcheckplus.ui.components.UpdateStatusLine
+import com.icy.devcheckplus.ui.components.WatchdogSheet
+import com.icy.devcheckplus.ui.components.rememberHapticTick
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
@@ -138,6 +144,14 @@ fun SettingsScreen(
     val listState = rememberLazyListState()
     TrackScrollActivity(listState)
 
+    // Hoisted out of the list content so a cross-link row can compute the target
+    // item index: item 0 is the header, then one item per visible category, in the
+    // user's own order.
+    val visibleSections = remember(sectionOrder, hiddenSections) {
+        sectionOrder.filterNot { it in hiddenSections }
+    }
+    val scope = rememberCoroutineScope()
+
     Box(modifier = modifier.fillMaxSize()) {
         AmbientBackground(modifier = Modifier.matchParentSize())
 
@@ -150,7 +164,6 @@ fun SettingsScreen(
                 SettingsHeader(onOrganizeSections = { showOrganizer = true })
             }
 
-            val visibleSections = sectionOrder.filterNot { it in hiddenSections }
             visibleSections.forEach { section ->
                 // One item per category, and the header is *inside* the box: a
                 // category is a single bordered gradient/glass object rather than a
@@ -177,7 +190,19 @@ fun SettingsScreen(
                             )
                             SettingsSectionId.PRIVILEGE -> PrivilegeSection()
                             SettingsSectionId.PRIVACY -> PrivacySection(
-                                onRefreshRateClick = { showRefreshRateSheet = true }
+                                onOpenAdvanced = {
+                                    // Scroll the list to the Advanced box (+1 for the
+                                    // header item). No-op when the user has hidden it.
+                                    val index = visibleSections.indexOf(SettingsSectionId.ADVANCED)
+                                    if (index >= 0) {
+                                        scope.launch { listState.animateScrollToItem(index + 1) }
+                                    }
+                                }
+                            )
+                            SettingsSectionId.ADVANCED -> AdvancedSection(
+                                onRefreshRateClick = { showRefreshRateSheet = true },
+                                onWatchdogClick = { showWatchdogSheet = true },
+                                onExportFormatClick = { showExportFormatSheet = true }
                             )
                             SettingsSectionId.GENERAL -> GeneralSection(onResetOnboarding = onResetOnboarding)
                             SettingsSectionId.EXPORT -> ExportSection(
@@ -215,6 +240,26 @@ fun SettingsScreen(
                 current = rate,
                 onSelect = { UserPreferencesStore.setRefreshRate(it) },
                 onDismiss = { showRefreshRateSheet = false }
+            )
+        }
+
+        if (showWatchdogSheet) {
+            val watchdog by UserPreferencesStore.watchdogTimeout
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.watchdogTimeout.value)
+            WatchdogSheet(
+                current = watchdog,
+                onSelect = { UserPreferencesStore.setWatchdogTimeout(it) },
+                onDismiss = { showWatchdogSheet = false }
+            )
+        }
+
+        if (showExportFormatSheet) {
+            val exportFormat by UserPreferencesStore.exportFormatPreference
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.exportFormatPreference.value)
+            ExportFormatSheet(
+                current = exportFormat,
+                onSelect = { UserPreferencesStore.setExportFormatPreference(it) },
+                onDismiss = { showExportFormatSheet = false }
             )
         }
 
@@ -618,14 +663,14 @@ private fun ColumnScope.BackgroundSection(onRequestAnimation: (BackgroundAnimati
             effective == BackgroundAnimation.NONE && oled && !override ->
                 "Forced to None because OLED mode is active — animated backgrounds light up pixels " +
                     "a true-black panel would leave off. Pick a style and confirm the warning to override."
-            effective == BackgroundAnimation.NONE ->
-                "Nothing is animated: a single static gradient is drawn once, with no animation clock."
+            effective == BackgroundAnimation.NONE -> effective.detail
             oled && override ->
                 "OLED override active. The animation runs at reduced intensity (fewer, dimmer " +
-                    "particles) — May increase battery usage on OLED displays."
+                    "elements) — May increase battery usage on OLED displays. " + effective.detail
+            // Each style describes its own cost, then the shared scheduling rules.
             else ->
-                "Runs on a single ~30 Hz clock, is skipped while scrolling, and stops completely " +
-                    "when the app is not in the foreground."
+                effective.detail + " Runs on a single ~30 Hz clock, is skipped while scrolling, and " +
+                    "stops completely when the app is not in the foreground."
         }
     )
 
@@ -855,21 +900,12 @@ private fun ColumnScope.UpdatesSection() {
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun ColumnScope.PrivacySection(onRefreshRateClick: () -> Unit) {
+private fun ColumnScope.PrivacySection(onOpenAdvanced: () -> Unit) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
     val publicIpLookup by AppSettingsStore.publicIpLookup
         .collectAsStateWithLifecycle(initialValue = AppSettingsStore.publicIpLookup.value)
-    val refreshRate by UserPreferencesStore.refreshRate
-        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.refreshRate.value)
-    val liveGraphs by UserPreferencesStore.liveGraphsEnabled
-        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.liveGraphsEnabled.value)
-    val frameMetrics by UserPreferencesStore.frameMetricsLogging
-        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.frameMetricsLogging.value)
-    // Only non-null while logging is on: the row then reports the measured jank
-    // of the last window, which is how the switches above are verified on device.
-    val frameReport = rememberFrameReport()
 
     GlassRow(
         title = "Public IP address lookup",
@@ -888,6 +924,59 @@ private fun ColumnScope.PrivacySection(onRefreshRateClick: () -> Unit) {
         color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
         thickness = 0.8.dp
     )
+
+    // Cross-link, not a copy: the rendering/polling costs used to live here and are
+    // now one tap away in Advanced, so this section stays about what leaves the device.
+    GlassRow(
+        title = "Rendering & polling costs",
+        icon = Icons.Default.Speed,
+        subtitle = "Live graphs, the global refresh rate, frame-metric logging, the export watchdog " +
+            "and the default export format.",
+        onClick = onOpenAdvanced,
+        trailing = {
+            PillAction(
+                text = "Advanced",
+                onClick = onOpenAdvanced,
+                contentDescription = "Open Advanced settings"
+            )
+        },
+        iconTint = scheme.primary
+    )
+}
+
+/**
+ * Advanced / developer section (new top-level category): every knob that trades
+ * fidelity for responsiveness in one place, instead of being scattered through
+ * Privacy and Export.
+ *
+ * Live graphs, the global refresh rate and frame-metric logging are the measured
+ * cost controls; the console shortcut, watchdog timeout and default export format
+ * are the workflow controls. A single reset returns all six to their safe defaults.
+ */
+@Composable
+private fun ColumnScope.AdvancedSection(
+    onRefreshRateClick: () -> Unit,
+    onWatchdogClick: () -> Unit,
+    onExportFormatClick: () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val watchdog by UserPreferencesStore.watchdogTimeout
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.watchdogTimeout.value)
+    val exportFormat by UserPreferencesStore.exportFormatPreference
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.exportFormatPreference.value)
+    val consoleShortcut by UserPreferencesStore.consoleQuickAccess
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.consoleQuickAccess.value)
+    val refreshRate by UserPreferencesStore.refreshRate
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.refreshRate.value)
+    val liveGraphs by UserPreferencesStore.liveGraphsEnabled
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.liveGraphsEnabled.value)
+    val frameMetrics by UserPreferencesStore.frameMetricsLogging
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.frameMetricsLogging.value)
+    // Only non-null while logging is on: the row then reports the measured jank of
+    // the last window, which is how the switches here are verified on device.
+    val frameReport = rememberFrameReport()
+    val spec = LocalGlassSpec.current
+    val hapticTick = rememberHapticTick()
 
     GlassRow(
         title = "Live graphs",
@@ -948,6 +1037,93 @@ private fun ColumnScope.PrivacySection(onRefreshRateClick: () -> Unit) {
                 onCheckedChange = { UserPreferencesStore.setFrameMetricsLogging(it) }
             )
         }
+    )
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    GlassRow(
+        title = "Console shortcut in header",
+        icon = Icons.Default.Terminal,
+        subtitle = if (consoleShortcut) {
+            "A terminal icon sits in the top bar of every category screen and opens Console directly."
+        } else {
+            "Console is reached from the navigation drawer only, keeping the header to search and pinning."
+        },
+        trailing = {
+            HapticSwitch(
+                checked = consoleShortcut,
+                onCheckedChange = { UserPreferencesStore.setConsoleQuickAccess(it) }
+            )
+        }
+    )
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    GlassRow(
+        title = "Watchdog timeout",
+        icon = Icons.Default.Timer,
+        subtitle = "One deep read may run for " + watchdog.label + " while a report is exported or a " +
+            "pinned value is resolved; past that it reports \"timed out\" instead of hanging.",
+        onClick = onWatchdogClick,
+        trailing = {
+            PillAction(
+                text = watchdog.seconds.toString() + "s",
+                onClick = onWatchdogClick,
+                contentDescription = "Change the watchdog timeout"
+            )
+        },
+        iconTint = scheme.primary
+    )
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    GlassRow(
+        title = "Default export format",
+        icon = Icons.Default.Description,
+        subtitle = "The export dialog's primary button uses this format, and the other one stays a " +
+            "tap away. " + exportFormat.tagline + ".",
+        onClick = onExportFormatClick,
+        trailing = {
+            PillAction(
+                text = exportFormat.shortLabel,
+                onClick = onExportFormatClick,
+                contentDescription = "Change the default export format"
+            )
+        },
+        iconTint = scheme.primary
+    )
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    // One tap back to a known-good performance configuration: graphs on, balanced
+    // polling, watchdog and export format at their defaults. Useful after
+    // experimenting — and the fastest way to A/B a jank report.
+    GlassRow(
+        title = "Reset advanced defaults",
+        icon = Icons.Default.SettingsBackupRestore,
+        subtitle = "Live graphs on, refresh rate balanced, frame-metric logging off, console " +
+            "shortcut off, watchdog 20s, export format asks. Appearance and pinned data are untouched.",
+        onClick = {
+            hapticTick()
+            UserPreferencesStore.resetAdvancedDefaults()
+        },
+        iconTint = scheme.tertiary
     )
 }
 

@@ -135,15 +135,118 @@ enum class GradientStyle(val label: String, val tagline: String) {
     }
 }
 
-/** Ambient background behind every screen. */
-enum class BackgroundAnimation(val label: String, val tagline: String) {
-    GRADIENT_DRIFT("Gradient Drift", "Slow drifting colour fields"),
-    PARTICLES("Particles", "Drift plus floating motes"),
-    NONE("None", "Static gradient only");
+/**
+ * Ambient background behind every screen.
+ *
+ * Every style is drawn by the *same* single ~30 Hz phase clock in
+ * [com.icy.devcheckplus.ui.components.AmbientBackground], stops completely while a
+ * list is being flung and while the app is backgrounded, and is replaced by one
+ * static gradient when [NONE] is chosen. [motes] marks the styles that also draw
+ * small drifting elements on top of the colour fields; [moteDensity] scales the
+ * theme's mote budget for them, and [detail] is the sentence the picker shows
+ * under the tiles so the cost of each style is not a mystery.
+ */
+enum class BackgroundAnimation(
+    val label: String,
+    val tagline: String,
+    val motes: Boolean = false,
+    val moteDensity: Float = 1f,
+    val detail: String = ""
+) {
+    GRADIENT_DRIFT(
+        label = "Gradient Drift",
+        tagline = "Slow drifting colour fields",
+        detail = "Three soft colour fields drifting on one 26 s cycle — the lightest animated style."
+    ),
+    AURORA_WAVES(
+        label = "Aurora Waves",
+        tagline = "Curtains of light",
+        detail = "Three sine-edged curtains swept sideways. Slightly more path work per frame than Drift."
+    ),
+    FLOATING_ORBS(
+        label = "Floating Orbs",
+        tagline = "Soft orbs, slow bob",
+        motes = true,
+        moteDensity = 0.45f,
+        detail = "A few large soft orbs bobbing and rising, each with a lit edge. Fewer elements than Particles."
+    ),
+    MESH_GRADIENT(
+        label = "Mesh Gradient",
+        tagline = "Interpolated lattice",
+        detail = "A drifting lattice of colour points that blend into each other. The richest look, and the " +
+            "most gradient fills per frame."
+    ),
+    PARTICLES(
+        label = "Particles",
+        tagline = "Drift plus floating motes",
+        motes = true,
+        detail = "Gradient Drift with twinkling motes rising through it."
+    ),
+    STARFIELD(
+        label = "Starfield",
+        tagline = "Twinkling stars",
+        motes = true,
+        // Stars are tiny single-colour circles, so the count can be ~3× the mote
+        // budget and still cost less per frame than one large orb.
+        moteDensity = 3f,
+        detail = "A dense field of small stars that twinkle and drift over one faint nebula. Most " +
+            "elements of any style, but each one is a cheap dot — pick Drift or None if you want " +
+            "the fewest fills per frame."
+    ),
+    NONE(
+        label = "None",
+        tagline = "Static gradient only",
+        detail = "Nothing is animated: a single static gradient is drawn once, with no animation clock."
+    );
 
     companion object {
         fun fromKey(raw: String?): BackgroundAnimation =
             values().firstOrNull { it.name.equals(raw?.trim(), ignoreCase = true) } ?: GRADIENT_DRIFT
+    }
+}
+
+/**
+ * Watchdog for one *deep* read while building an exported report or resolving a
+ * pinned dashboard value.
+ *
+ * These reads can need a root or Shizuku shell, so they are bounded — but the
+ * right bound depends on the device: a slow shell answering in 25 s is a success
+ * on one phone and a hang on another, which is why the duration is a setting
+ * (Settings › Advanced) instead of a constant baked into the collectors.
+ */
+enum class WatchdogTimeout(val label: String, val tagline: String, val seconds: Int) {
+    STRICT("10 s", "Fail fast", 10),
+    BALANCED("20 s", "Default — tolerates one prompt", 20),
+    PATIENT("45 s", "Slow shells, busy devices", 45),
+    VERY_PATIENT("90 s", "Almost never times out", 90);
+
+    val millis: Long get() = seconds * 1_000L
+
+    companion object {
+        val DEFAULT = BALANCED
+
+        fun fromKey(raw: String?): WatchdogTimeout =
+            values().firstOrNull { it.name.equals(raw?.trim(), ignoreCase = true) } ?: DEFAULT
+    }
+}
+
+/** What the export action does without asking. */
+enum class ExportFormatPreference(
+    val label: String,
+    /** Pill-sized version of [label], for the settings row. */
+    val shortLabel: String,
+    val tagline: String,
+    val format: ReportFormat?
+) {
+    ASK("Ask every time", "Ask", "Two buttons: plain text or JSON", null),
+    TEXT("Plain text", "Text", "One tap exports readable text", ReportFormat.TEXT),
+    JSON("JSON", "JSON", "One tap exports structured JSON", ReportFormat.JSON);
+
+    companion object {
+        val DEFAULT = ASK
+
+        fun fromKey(raw: String?): ExportFormatPreference =
+            values().firstOrNull { it.name.equals(raw?.trim(), ignoreCase = true) } ?: DEFAULT
     }
 }
 
@@ -188,15 +291,33 @@ enum class SettingsSectionId(val title: String) {
     GENERAL("GENERAL"),
     UPDATES("UPDATES"),
     EXPORT("EXPORT & SHARE"),
+    /** Power-user switches: performance, watchdogs, export defaults, console. */
+    ADVANCED("ADVANCED"),
     ABOUT("ABOUT");
 
     companion object {
         val DEFAULT_ORDER: List<SettingsSectionId> = values().toList()
 
+        /**
+         * Restores a stored order, inserting anything it predates at its *default
+         * slot* rather than dangling it at the bottom — so a section added in a
+         * later release (ADVANCED) shows up where it belongs for existing installs
+         * whose order was saved before it existed.
+         */
         fun fromKeys(order: List<String>?): List<SettingsSectionId> {
             val parsed = order.orEmpty().mapNotNull { key -> values().firstOrNull { it.name == key } }
-            // Anything new (or missing from a stale stored order) keeps its default slot.
-            return parsed + DEFAULT_ORDER.filterNot { it in parsed }
+            if (parsed.size == DEFAULT_ORDER.size) return parsed
+
+            val result = parsed.toMutableList()
+            DEFAULT_ORDER.forEachIndexed { index, section ->
+                if (section in result) return@forEachIndexed
+                // Anchor on the next section in the default order that the stored
+                // list does contain, and insert just before it.
+                val anchor = DEFAULT_ORDER.drop(index + 1).firstOrNull { it in result }
+                val at = anchor?.let { result.indexOf(it) }?.takeIf { it >= 0 } ?: result.size
+                result.add(at, section)
+            }
+            return result
         }
     }
 }
@@ -230,6 +351,12 @@ data class UserPreferences(
     /** Explicit opt-in to keep the animation running in OLED mode. */
     val backgroundAnimationOverride: Boolean = false,
     val autoUpdateCheck: Boolean = true,
+    /** Watchdog for one deep read while exporting or resolving pinned values. */
+    val watchdogTimeout: WatchdogTimeout = WatchdogTimeout.DEFAULT,
+    /** Whether the export action needs a format choice first. */
+    val exportFormatPreference: ExportFormatPreference = ExportFormatPreference.DEFAULT,
+    /** Adds a Console shortcut to the top bar (Settings › Advanced). */
+    val consoleQuickAccess: Boolean = false,
     val hiddenSettingsSections: Set<SettingsSectionId> = emptySet(),
     val settingsSectionOrder: List<SettingsSectionId> = SettingsSectionId.DEFAULT_ORDER
 ) {
@@ -275,6 +402,9 @@ object UserPreferencesStore {
     private const val KEY_BACKGROUND_ANIMATION = "background_animation"
     private const val KEY_BACKGROUND_OVERRIDE = "background_animation_override"
     private const val KEY_AUTO_UPDATE = "auto_update_check"
+    private const val KEY_WATCHDOG = "watchdog_timeout"
+    private const val KEY_EXPORT_FORMAT = "export_format_preference"
+    private const val KEY_CONSOLE_SHORTCUT = "console_quick_access"
     private const val KEY_HIDDEN_SECTIONS = "settings_hidden_sections"
     private const val KEY_SECTION_ORDER = "settings_section_order"
 
@@ -302,6 +432,9 @@ object UserPreferencesStore {
     val backgroundAnimation: StateFlow<BackgroundAnimation> = derive { it.backgroundAnimation }
     val backgroundAnimationOverride: StateFlow<Boolean> = derive { it.backgroundAnimationOverride }
     val autoUpdateCheck: StateFlow<Boolean> = derive { it.autoUpdateCheck }
+    val watchdogTimeout: StateFlow<WatchdogTimeout> = derive { it.watchdogTimeout }
+    val exportFormatPreference: StateFlow<ExportFormatPreference> = derive { it.exportFormatPreference }
+    val consoleQuickAccess: StateFlow<Boolean> = derive { it.consoleQuickAccess }
     val hiddenSettingsSections: StateFlow<Set<SettingsSectionId>> = derive { it.hiddenSettingsSections }
     val settingsSectionOrder: StateFlow<List<SettingsSectionId>> = derive { it.settingsSectionOrder }
 
@@ -352,6 +485,9 @@ object UserPreferencesStore {
             backgroundAnimation = BackgroundAnimation.fromKey(prefs[stringPreferencesKey(KEY_BACKGROUND_ANIMATION)]),
             backgroundAnimationOverride = prefs[booleanPreferencesKey(KEY_BACKGROUND_OVERRIDE)] ?: false,
             autoUpdateCheck = prefs[booleanPreferencesKey(KEY_AUTO_UPDATE)] ?: true,
+            watchdogTimeout = WatchdogTimeout.fromKey(prefs[stringPreferencesKey(KEY_WATCHDOG)]),
+            exportFormatPreference = ExportFormatPreference.fromKey(prefs[stringPreferencesKey(KEY_EXPORT_FORMAT)]),
+            consoleQuickAccess = prefs[booleanPreferencesKey(KEY_CONSOLE_SHORTCUT)] ?: false,
             hiddenSettingsSections = prefs[stringSetPreferencesKey(KEY_HIDDEN_SECTIONS)]
                 .orEmpty()
                 .mapNotNull { key -> SettingsSectionId.values().firstOrNull { it.name == key } }
@@ -434,6 +570,47 @@ object UserPreferencesStore {
     fun setAutoUpdateCheck(enabled: Boolean) {
         update { it.copy(autoUpdateCheck = enabled) }
         persist { prefs -> prefs[booleanPreferencesKey(KEY_AUTO_UPDATE)] = enabled }
+    }
+
+    fun setWatchdogTimeout(timeout: WatchdogTimeout) {
+        update { it.copy(watchdogTimeout = timeout) }
+        persist { prefs -> prefs[stringPreferencesKey(KEY_WATCHDOG)] = timeout.name }
+    }
+
+    fun setExportFormatPreference(preference: ExportFormatPreference) {
+        update { it.copy(exportFormatPreference = preference) }
+        persist { prefs -> prefs[stringPreferencesKey(KEY_EXPORT_FORMAT)] = preference.name }
+    }
+
+    fun setConsoleQuickAccess(enabled: Boolean) {
+        update { it.copy(consoleQuickAccess = enabled) }
+        persist { prefs -> prefs[booleanPreferencesKey(KEY_CONSOLE_SHORTCUT)] = enabled }
+    }
+
+    /**
+     * Puts every power-user switch back to its default in one tap. Kept to the
+     * Advanced group on purpose: it never touches theming, pins or report content.
+     */
+    fun resetAdvancedDefaults() {
+        update {
+            it.copy(
+                liveGraphsEnabled = true,
+                refreshRate = RefreshRate.DEFAULT,
+                frameMetricsLogging = false,
+                watchdogTimeout = WatchdogTimeout.DEFAULT,
+                exportFormatPreference = ExportFormatPreference.DEFAULT,
+                consoleQuickAccess = false
+            )
+        }
+        persist { prefs ->
+            prefs[booleanPreferencesKey(KEY_LIVE_GRAPHS)] = true
+            prefs[stringPreferencesKey(KEY_REFRESH_RATE)] = RefreshRate.DEFAULT.name
+            prefs[longPreferencesKey(KEY_POLL_INTERVAL)] = RefreshRate.DEFAULT.intervalMs
+            prefs[booleanPreferencesKey(KEY_FRAME_METRICS)] = false
+            prefs[stringPreferencesKey(KEY_WATCHDOG)] = WatchdogTimeout.DEFAULT.name
+            prefs[stringPreferencesKey(KEY_EXPORT_FORMAT)] = ExportFormatPreference.DEFAULT.name
+            prefs[booleanPreferencesKey(KEY_CONSOLE_SHORTCUT)] = false
+        }
     }
 
     fun setSettingsSectionOrder(order: List<SettingsSectionId>) {

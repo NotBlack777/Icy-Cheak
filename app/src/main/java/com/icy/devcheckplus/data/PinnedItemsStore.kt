@@ -71,8 +71,12 @@ object PinnedItemsStore {
     /** Hard cap so the dashboard (and the preference file) stay small. */
     const val MAX_PINS = 60
 
-    /** Watchdog for loading one category while resolving pinned values. */
-    private const val CATEGORY_TIMEOUT_MS = 20_000L
+    /**
+     * Watchdog for loading one category while resolving pinned values — the same
+     * user setting the export uses (Settings › Advanced › Watchdog timeout).
+     */
+    private val categoryTimeoutMs: Long
+        get() = UserPreferencesStore.watchdogTimeout.value.millis
 
     fun pinnedKeys(context: Context): Flow<Set<String>> =
         context.pinnedDataStore.data.map { prefs -> prefs[KEY_PINNED] ?: emptySet() }
@@ -135,7 +139,7 @@ object PinnedItemsStore {
 
     private suspend fun fetchCategory(context: Context, category: PinnableCategory): List<InfoSection> {
         return try {
-            withTimeoutOrNull(CATEGORY_TIMEOUT_MS) {
+            withTimeoutOrNull(categoryTimeoutMs) {
                 when (category) {
                     PinnableCategory.HARDWARE -> HardwareDataProvider.getHardwareSections(context)
                     PinnableCategory.SOFTWARE -> SoftwareDataProvider.getSoftwareSections(context)

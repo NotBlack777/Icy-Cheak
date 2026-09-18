@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.DrawerValue
@@ -326,7 +327,11 @@ fun MainDashboardScreen(
                         search = search,
                         currentCategory = currentCategory,
                         onOpenDrawer = { scope.launch { drawerState.open() } },
-                        onStatusClick = { currentCategory = NavCategory.SETTINGS }
+                        onStatusClick = { currentCategory = NavCategory.SETTINGS },
+                        onOpenConsole = {
+                            hapticTick()
+                            currentCategory = NavCategory.CONSOLE
+                        }
                     )
                 }
             }
@@ -390,12 +395,16 @@ private fun SearchHeader(
     search: SearchState,
     currentCategory: NavCategory,
     onOpenDrawer: () -> Unit,
-    onStatusClick: () -> Unit
+    onStatusClick: () -> Unit,
+    onOpenConsole: () -> Unit
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val searchHistory by AppSettingsStore.searchHistory
         .collectAsStateWithLifecycle(initialValue = AppSettingsStore.searchHistory.value)
+    // Settings › Advanced › Console shortcut in header.
+    val consoleShortcut by UserPreferencesStore.consoleQuickAccess
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.consoleQuickAccess.value)
 
     // Remember what the user actually searched for: only the term that survives
     // 1.2 s of idle typing is stored, so intermediate keystrokes are skipped.
@@ -469,6 +478,18 @@ private fun SearchHeader(
                     .heightIn(min = 50.dp)
                     .onFocusChanged { search.focused = it.isFocused }
             )
+
+            // One tap to Console from any category — the power-user shortcut. Hidden
+            // on Console itself, where it would do nothing.
+            if (consoleShortcut && currentCategory != NavCategory.CONSOLE) {
+                IconButton(onClick = onOpenConsole) {
+                    Icon(
+                        imageVector = Icons.Default.Terminal,
+                        contentDescription = "Open console",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
 
         // Quick-tap recent searches while the field is focused and empty. Rendered
