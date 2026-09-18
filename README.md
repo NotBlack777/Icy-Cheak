@@ -52,6 +52,7 @@
    - Complete package list filterable by **All**, **User Apps**, and **System Apps**.
    - Package name, version name, version code, and APK file size.
    - Install time, last update time, and requested Android permissions.
+   - Per-app management: **Force stop** and **Uninstall** via root/Shizuku (or the standard Android flow).
 
 8. **System Logs (Logcat)**
    - Live system logcat viewer (requires Root or Shizuku on Android 6+).
