@@ -105,8 +105,9 @@ fun GradientStyle.surfaceBrush(
                 flat = flat,
                 fidelity = fidelity,
                 stops = listOf(
-                    AccentOrange.copy(alpha = 0.24f),
-                    AccentPink.copy(alpha = 0.18f),
+                    SunsetOrange.copy(alpha = 0.32f),
+                    SunsetYellow.copy(alpha = 0.22f),
+                    SunsetPink.copy(alpha = 0.20f),
                     scheme.surface.copy(alpha = baseAlpha)
                 )
             ),
@@ -228,9 +229,10 @@ fun GradientStyle.ambientBrush(
                 flat = flat,
                 fidelity = fidelity,
                 stops = listOf(
-                    AccentOrange.copy(alpha = accentAlpha),
+                    SunsetOrange.copy(alpha = accentAlpha * 1.2f),
+                    SunsetYellow.copy(alpha = accentAlpha * 0.8f),
                     scheme.background,
-                    AccentPink.copy(alpha = accentAlpha * 0.7f)
+                    SunsetPink.copy(alpha = accentAlpha * 0.9f)
                 )
             ),
             start = Offset.Zero,
