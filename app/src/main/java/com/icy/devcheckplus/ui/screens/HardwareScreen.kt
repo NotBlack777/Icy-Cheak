@@ -26,13 +26,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.HardwareDataProvider
-import com.icy.devcheckplus.data.LiveMetrics
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.components.ChartSeries
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.InfoSectionCard
 import com.icy.devcheckplus.ui.components.LiveChartCard
-import com.icy.devcheckplus.ui.components.rememberLiveMetrics
+import com.icy.devcheckplus.ui.components.LiveTelemetryEffect
+import com.icy.devcheckplus.ui.components.collectLiveMetrics
+import com.icy.devcheckplus.ui.components.rememberSamplingLabel
 import com.icy.devcheckplus.ui.theme.ChartPalette
 
 @Composable
@@ -51,8 +52,12 @@ fun HardwareScreen(
     }
 
     val showCharts = searchQuery.isBlank()
-    // Live polling only runs while the charts are actually on screen.
-    val metrics = rememberLiveMetrics(enabled = showCharts)
+    // Registers interest in the shared ticker without *reading* any state here.
+    // Reading the snapshot at screen level made the whole screen - LazyColumn
+    // content lambdas included - recompose once per sample, which in turn
+    // recomposed every visible row and card. Each chart now collects the
+    // snapshot itself, so a sample only invalidates the charts.
+    LiveTelemetryEffect(enabled = showCharts)
 
     if (loading) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -90,14 +95,14 @@ fun HardwareScreen(
                         GlassSectionHeader(
                             title = "LIVE TELEMETRY",
                             icon = Icons.Default.Speed,
-                            supporting = "1 s sampling"
+                            supporting = rememberSamplingLabel()
                         )
                     }
                     item(key = "hardware_chart_cpu") {
-                        CpuFrequencyChart(metrics = metrics)
+                        CpuFrequencyChart()
                     }
                     item(key = "hardware_chart_ram") {
-                        MemoryUsageChart(metrics = metrics)
+                        MemoryUsageChart()
                     }
                     item(key = "hardware_inventory_header") {
                         GlassSectionHeader(title = "INVENTORY", icon = Icons.Default.Memory)
@@ -115,7 +120,9 @@ fun HardwareScreen(
 }
 
 @Composable
-private fun CpuFrequencyChart(metrics: LiveMetrics) {
+private fun CpuFrequencyChart() {
+    // Scoped state read: only this card recomposes when a sample lands.
+    val metrics = collectLiveMetrics()
     val scheme = MaterialTheme.colorScheme
 
     val series = remember(metrics.coreFreqMhz, metrics.averageFreqMhz, scheme.primary) {
@@ -165,7 +172,8 @@ private fun CpuFrequencyChart(metrics: LiveMetrics) {
 }
 
 @Composable
-private fun MemoryUsageChart(metrics: LiveMetrics) {
+private fun MemoryUsageChart() {
+    val metrics = collectLiveMetrics()
     val scheme = MaterialTheme.colorScheme
     val series = remember(metrics.ramPercent, scheme.tertiary) {
         listOf(

@@ -5,13 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -19,6 +16,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -62,25 +61,23 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
         return
     }
 
-    val transition = rememberInfiniteTransition(label = "ambientBackground")
-    val driftA = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(26_000, easing = LinearEasing), RepeatMode.Reverse),
-        label = "driftA"
-    )
-    val driftB = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(34_000, easing = LinearEasing), RepeatMode.Reverse),
-        label = "driftB"
-    )
-    val driftC = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(20_000, easing = LinearEasing), RepeatMode.Reverse),
-        label = "driftC"
-    )
+    // A self-throttled frame clock at ~20 fps instead of an infinite transition
+    // at the display's refresh rate. The blobs drift on 20-34 s cycles, so
+    // repainting three screen-sized radial gradients 60-120 times a second was
+    // the single largest continuous draw cost in the app - and it happened on
+    // every frame whether or not anything was moving. One float state, written
+    // in the frame callback and read *inside* the draw scope, invalidates
+    // drawing for this node only: still no recomposition, a third of the frames.
+    val clock = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(spec.ambientAnimation) {
+        val startNanos = withFrameNanos { it }
+        while (isActive) {
+            withFrameNanos { now: Long ->
+                clock.floatValue = (now - startNanos) / NANOS_PER_SECOND
+            }
+            delay(FRAME_INTERVAL_MS)
+        }
+    }
 
     val particles = remember(spec.particleCount) { buildParticles(spec.particleCount) }
     val intensity = spec.ambientIntensity
@@ -94,9 +91,10 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
         if (w <= 0f || h <= 0f) return@Canvas
 
         // Values are read here (draw phase) — never in composition.
-        val a = driftA.value
-        val b = driftB.value
-        val c = driftC.value
+        val seconds = clock.floatValue
+        val a = pingPong(seconds / 26f)
+        val b = pingPong(seconds / 34f)
+        val c = pingPong(seconds / 20f)
 
         drawRect(brush = baseBrush)
 
@@ -148,6 +146,12 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
     }
 }
 
+/** Triangle wave in 0f..1f — the Reverse-repeat equivalent of the old tweens. */
+private fun pingPong(x: Float): Float {
+    val wrapped = x % 2f
+    return if (wrapped <= 1f) wrapped else 2f - wrapped
+}
+
 private fun DrawScope.drawBlob(
     color: Color,
     alpha: Float,
@@ -191,6 +195,11 @@ private class Particle(
         else -> tertiary
     }
 }
+
+private const val NANOS_PER_SECOND = 1_000_000_000f
+
+/** ~20 fps. Slow drift does not need display-rate updates. */
+private const val FRAME_INTERVAL_MS = 50L
 
 private fun buildParticles(count: Int): List<Particle> {
     if (count <= 0) return emptyList()

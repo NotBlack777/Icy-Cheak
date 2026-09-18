@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -54,6 +55,18 @@ import com.icy.devcheckplus.ui.theme.LocalGlassSpec
  * reports a 0dp radius (solid colour fallback).
  */
 
+/**
+ * Whether frosted surfaces may build their blur layer right now.
+ *
+ * `Modifier.blur` renders the layer into an offscreen buffer and applies a
+ * RenderEffect; that is cheap to *translate* but expensive to *create*, and a
+ * LazyColumn creates items continuously while flinging. Scrolling containers
+ * therefore provide `false` during a scroll and `true` again once the list
+ * settles, which trades a momentary flat tint for a smooth fling. Two
+ * recompositions per fling, instead of a blur setup per card per frame.
+ */
+val LocalFrostEffect = compositionLocalOf { true }
+
 private val ShadowTint = Color(0xCC000000)
 
 @Composable
@@ -78,7 +91,7 @@ fun GlassCard(
             )
             .clip(shape)
     ) {
-        if (frosted) {
+        if (frosted && LocalFrostEffect.current) {
             FrostedLayer(
                 shape = shape,
                 radius = spec.cardBlurRadius,

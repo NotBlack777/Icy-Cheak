@@ -81,7 +81,7 @@ fun StorageScreen(
         }
 
         LazyColumn(modifier = modifier.fillMaxSize()) {
-            items(filteredSections) { sec ->
+            items(filteredSections, key = { it.title }) { sec ->
                 InfoSectionCard(section = sec, category = PinnableCategory.STORAGE)
             }
 
@@ -96,7 +96,7 @@ fun StorageScreen(
                     )
                 }
 
-                items(filteredPartitions) { part ->
+                items(filteredPartitions, key = { it.mountPoint }) { part ->
                     PartitionCard(item = part)
                 }
             }

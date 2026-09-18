@@ -60,7 +60,7 @@ fun SearchSuggestionRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             contentPadding = PaddingValues(vertical = 2.dp)
         ) {
-            items(suggestions) { term ->
+            items(suggestions, key = { it }) { term ->
                 FilterChip(
                     selected = false,
                     onClick = {

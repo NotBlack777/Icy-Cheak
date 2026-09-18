@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Adb
@@ -37,7 +38,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +66,7 @@ import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassRow
 import com.icy.devcheckplus.ui.components.HapticSwitch
+import com.icy.devcheckplus.ui.components.LocalFrostEffect
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.SelectableTile
 import com.icy.devcheckplus.ui.components.ThemeModePreview
@@ -107,10 +111,19 @@ fun SettingsScreen(
         }
     }
 
+    val listState = rememberLazyListState()
+    // Blur layers get rebuilt for every card that scrolls into view, which is
+    // what made this list stutter mid-fling. Frosting is suspended while the
+    // list is moving and restored the moment it settles: two recompositions per
+    // fling instead of a RenderEffect setup per card per frame.
+    val frosting by remember { derivedStateOf { !listState.isScrollInProgress } }
+
     Box(modifier = modifier.fillMaxSize()) {
         AmbientBackground(modifier = Modifier.matchParentSize())
 
+        CompositionLocalProvider(LocalFrostEffect provides frosting) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 36.dp)
         ) {
@@ -181,6 +194,7 @@ fun SettingsScreen(
                     textAlign = TextAlign.Center
                 )
             }
+        }
         }
 
         if (showExportDialog) {

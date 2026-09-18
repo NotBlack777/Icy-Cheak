@@ -9,9 +9,19 @@ import android.os.SystemClock
 import androidx.compose.runtime.Immutable
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
+import java.io.FileInputStream
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Immutable snapshot of the rolling telemetry buffers.
@@ -49,7 +59,29 @@ data class LiveMetrics(
     val latestRamPercent: Float get() = ramPercent.lastOrNull() ?: 0f
     val latestTempC: Float get() = batteryTempC.lastOrNull() ?: 0f
     val latestCurrentMa: Float get() = batteryCurrentMa.lastOrNull() ?: 0f
+
+    /**
+     * Identity is the sample counter.
+     *
+     * The generated data-class `equals` compared thirteen rolling buffers
+     * element-wise (up to ~800 boxed comparisons) on *every* emission and for
+     * every collector, purely to decide "did this change?" - and the answer is
+     * always yes, because [version] increments once per sample. Comparing the
+     * counter is O(1) and gives the same result.
+     */
+    override fun equals(other: Any?): Boolean =
+        other is LiveMetrics && other.version == version
+
+    override fun hashCode(): Int = version
 }
+
+/** Renders the sampling cadence for headers and the exported report. */
+fun formatSamplingInterval(intervalMs: Long): String =
+    if (intervalMs % 1000L == 0L) {
+        "${intervalMs / 1000L} s"
+    } else {
+        String.format(java.util.Locale.US, "%.1f s", intervalMs / 1000f)
+    }
 
 private data class BatteryReading(
     val level: Int,
@@ -77,12 +109,40 @@ object LiveMetricsRepository {
 
     const val DEFAULT_INTERVAL_MS = 1_000L
 
+    /** Bounds for the user-selectable sampling cadence (Settings). */
+    const val MIN_INTERVAL_MS = 250L
+    const val MAX_INTERVAL_MS = 10_000L
+
     /** Watchdog for the batched per-poll frequency read. */
     private const val POLL_COMMAND_TIMEOUT_MS = 3_500L
     private const val MAX_SAMPLES = 60
     private const val MB = 1024L * 1024L
 
     private val lock = Any()
+    private val tickerLock = Any()
+
+    /**
+     * The ticker's own scope. It must outlive any single screen's composition,
+     * so it is *not* a `rememberCoroutineScope` - one process-wide loop, started
+     * when the first subscriber appears and stopped when the last one goes away
+     * or the app backgrounds.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val _metrics = MutableStateFlow(LiveMetrics())
+
+    /** Single shared snapshot stream; every chart collects this one flow. */
+    val metrics: StateFlow<LiveMetrics> = _metrics.asStateFlow()
+
+    /** Composables currently interested in live telemetry. */
+    private val subscribers = AtomicInteger(0)
+    private var tickerJob: Job? = null
+    private var appContext: Context? = null
+
+    /** Current sampling cadence, settable from Settings. */
+    @Volatile
+    var intervalMs: Long = DEFAULT_INTERVAL_MS
+        private set
 
     private var version = 0
     private var lastSampleAt = 0L
@@ -107,8 +167,72 @@ object LiveMetricsRepository {
     private var temperatureReadable = false
     private var currentReadable = false
 
-    /** Latest snapshot without doing any I/O. */
-    fun snapshot(): LiveMetrics = synchronized(lock) { snapshotLocked() }
+    /** Latest published snapshot without doing any I/O. */
+    fun snapshot(): LiveMetrics = _metrics.value
+
+    /** Called once from Application.onCreate(). */
+    fun init(context: Context) {
+        appContext = context.applicationContext
+        // Follow the process-wide foreground signal: the ticker stops when the
+        // app is backgrounded even if some composition is still alive, and
+        // restarts on return without waiting for a screen to remount.
+        scope.launch {
+            AppForeground.isForeground.collect { syncTicker() }
+        }
+    }
+
+    /** Applies a user-selected cadence, restarting the ticker if it is running. */
+    fun setInterval(milliseconds: Long) {
+        val clamped = milliseconds.coerceIn(MIN_INTERVAL_MS, MAX_INTERVAL_MS)
+        if (clamped == intervalMs) return
+        intervalMs = clamped
+        synchronized(tickerLock) {
+            val wasRunning = tickerJob?.isActive == true
+            tickerJob?.cancel()
+            tickerJob = null
+            if (wasRunning) startTickerLocked()
+        }
+    }
+
+    /** Registers interest in live telemetry. Pair every call with [release]. */
+    fun acquire() {
+        subscribers.incrementAndGet()
+        syncTicker()
+    }
+
+    /** Drops interest; the ticker stops when the count reaches zero. */
+    fun release() {
+        subscribers.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
+        syncTicker()
+    }
+
+    private fun syncTicker() {
+        val shouldRun = subscribers.get() > 0 &&
+            appContext != null &&
+            AppForeground.isForeground.value
+        synchronized(tickerLock) {
+            val running = tickerJob?.isActive == true
+            when {
+                shouldRun && !running -> startTickerLocked()
+                !shouldRun && running -> {
+                    tickerJob?.cancel()
+                    tickerJob = null
+                }
+            }
+        }
+    }
+
+    private fun startTickerLocked() {
+        tickerJob = scope.launch {
+            // Sample immediately so a freshly mounted chart is not blank for a
+            // full interval, then settle into the cadence.
+            sampleInternal()
+            while (isActive) {
+                delay(intervalMs)
+                sampleInternal()
+            }
+        }
+    }
 
     /** Drops history — used when the privilege mode changes. */
     fun reset() {
@@ -122,23 +246,31 @@ object LiveMetricsRepository {
             cpuReadable = false
             version = 0
             lastSampleAt = 0L
+            _metrics.value = snapshotLocked()
         }
     }
 
     /**
-     * Takes one sample when at least 60 % of [intervalMs] has elapsed since the
-     * previous one, then returns the current snapshot. Safe to call from any
-     * dispatcher — the blocking work runs on [Dispatchers.IO].
+     * One-off sample for callers outside the ticker (report export). Returns the
+     * cached snapshot when the ticker sampled less than 60 % of an interval ago,
+     * so an export can never double-read in the same window.
      */
-    suspend fun sample(context: Context, intervalMs: Long = DEFAULT_INTERVAL_MS): LiveMetrics {
+    suspend fun sample(context: Context): LiveMetrics {
+        if (appContext == null) appContext = context.applicationContext
         val now = SystemClock.elapsedRealtime()
         val tooSoon = synchronized(lock) {
             lastSampleAt != 0L && now - lastSampleAt < (intervalMs * 3 / 5)
         }
         if (tooSoon) return snapshot()
+        sampleInternal()
+        return snapshot()
+    }
 
-        return withContext(Dispatchers.IO) {
-            val appContext = context.applicationContext
+    /** The single sampling path, used by both the ticker and [sample]. */
+    private suspend fun sampleInternal() {
+        val appContext = this.appContext ?: return
+
+        withContext(Dispatchers.IO) {
             ensureCoreTopology()
 
             val privileged = PrivilegeManager.status.value.activeMode != PrivilegeMode.NONE
@@ -187,9 +319,11 @@ object LiveMetricsRepository {
                     push(tempBuffer, battery.temperatureC ?: 0f)
                     push(currentBuffer, battery.currentMa ?: 0f)
                 }
-            }
 
-            snapshot()
+                // Built under the lock, published outside it: one write per
+                // sample, and O(1) equality (see LiveMetrics.equals).
+                snapshotLocked()
+            }.also { next -> _metrics.value = next }
         }
     }
 
@@ -309,11 +443,20 @@ object LiveMetricsRepository {
         }
     }
 
+    /**
+     * Reads a single-number sysfs node.
+     *
+     * The previous version did `exists()` + `canRead()` + `readText()`: two stat
+     * syscalls plus a Reader and StringBuilder per core, every sample (that is
+     * ~24 wasted syscalls a second on an 8-core device at 1 s polling). One
+     * `FileInputStream.read` into a small buffer covers it - an unreadable node
+     * simply throws and returns null, which is the same answer the stats gave.
+     */
     private fun readLongFromFile(path: String): Long? {
         return try {
-            val file = File(path)
-            if (!file.exists() || !file.canRead()) return null
-            file.readText().trim().toLongOrNull()
+            val buffer = ByteArray(24)
+            val count = FileInputStream(path).use { it.read(buffer) }
+            if (count <= 0) null else String(buffer, 0, count).trim().toLongOrNull()
         } catch (_: Throwable) {
             null
         }

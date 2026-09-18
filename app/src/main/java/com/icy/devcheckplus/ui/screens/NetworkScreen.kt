@@ -71,7 +71,7 @@ fun NetworkScreen(
             }
         } else {
             LazyColumn(modifier = modifier.fillMaxSize()) {
-                items(filteredSections) { sec ->
+                items(filteredSections, key = { it.title }) { sec ->
                     InfoSectionCard(section = sec, category = PinnableCategory.NETWORK)
                 }
                 item {

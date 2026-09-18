@@ -350,7 +350,7 @@ object DeviceReport {
 
         return listOf(
             InfoSection(
-                title = "Live telemetry (1 s sampling)",
+                title = "Live telemetry (${formatSamplingInterval(LiveMetricsRepository.intervalMs)} sampling)",
                 items = listOf(
                     InfoItem("Samples collected", metrics.sampleCount.toString()),
                     InfoItem("CPU cores", metrics.coreCount.toString()),

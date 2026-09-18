@@ -177,6 +177,9 @@ fun SystemLogsScreen(
             }
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                // No key here on purpose: logcat legitimately emits identical
+                // lines (same timestamp/pid/tag/message), and a duplicate
+                // LazyList key throws. Rows are rebound wholesale per refresh.
                 items(filtered) { entry ->
                     LogEntryCard(entry = entry)
                 }

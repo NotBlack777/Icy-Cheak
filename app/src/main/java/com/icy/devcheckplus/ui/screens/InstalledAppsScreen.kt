@@ -57,6 +57,12 @@ fun InstalledAppsScreen(
 
     val tick = rememberHapticTick()
 
+    // Counted once per data change instead of once per recomposition: these two
+    // scans over the whole package list used to run on every search keystroke.
+    val counts = remember(apps) {
+        Triple(apps.size, apps.count { !it.isSystemApp }, apps.count { it.isSystemApp })
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -67,17 +73,17 @@ fun InstalledAppsScreen(
             FilterChip(
                 selected = filterType == 0,
                 onClick = { tick(); filterType = 0 },
-                label = { Text("All (${apps.size})") }
+                label = { Text("All (${counts.first})") }
             )
             FilterChip(
                 selected = filterType == 1,
                 onClick = { tick(); filterType = 1 },
-                label = { Text("User (${apps.count { !it.isSystemApp }})") }
+                label = { Text("User (${counts.second})") }
             )
             FilterChip(
                 selected = filterType == 2,
                 onClick = { tick(); filterType = 2 },
-                label = { Text("System (${apps.count { it.isSystemApp }})") }
+                label = { Text("System (${counts.third})") }
             )
         }
 
@@ -102,7 +108,10 @@ fun InstalledAppsScreen(
             }
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(filtered) { app ->
+                // Package names are unique by definition, so rows keep their
+                // identity (and their expanded state) across filter changes
+                // instead of being rebound positionally.
+                items(filtered, key = { it.packageName }) { app ->
                     AppItemCard(app = app)
                 }
                 item {

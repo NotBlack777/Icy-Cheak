@@ -136,6 +136,10 @@ fun ProcessesScreen(
             }
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                // No key here on purpose: malformed `ps` lines parse to pid 0,
+                // so pid is not guaranteed unique and a duplicate LazyList key
+                // throws. The list is also replaced wholesale on every refresh,
+                // so positional keys are equivalent.
                 items(filtered) { proc ->
                     ProcessCard(item = proc)
                 }

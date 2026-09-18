@@ -56,6 +56,7 @@ import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.PinToggleButton
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.components.rememberLiveMetrics
+import com.icy.devcheckplus.ui.components.rememberSamplingLabel
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -456,7 +457,7 @@ private fun EmptyDashboard(modifier: Modifier = Modifier) {
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "1 s sampling • pauses in the background",
+                text = rememberSamplingLabel() + " • pauses in the background",
                 style = MaterialTheme.typography.labelSmall,
                 color = scheme.onSurfaceVariant
             )

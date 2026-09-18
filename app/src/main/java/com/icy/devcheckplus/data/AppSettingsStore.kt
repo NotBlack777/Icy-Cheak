@@ -25,6 +25,7 @@ object AppSettingsStore {
     const val KEY_CONSOLE_HISTORY = "pref_console_history"
     const val KEY_SEARCH_HISTORY = "pref_search_history"
     const val KEY_HAPTIC_FEEDBACK = "pref_haptic_feedback"
+    const val KEY_POLL_INTERVAL = "pref_poll_interval"
 
     /** Maximum number of remembered console commands. */
     private const val MAX_CONSOLE_HISTORY = 20
@@ -62,6 +63,10 @@ object AppSettingsStore {
     private val _hapticFeedback = MutableStateFlow(true)
     val hapticFeedback: StateFlow<Boolean> = _hapticFeedback.asStateFlow()
 
+    /** Live telemetry sampling cadence, shared by every chart in the app. */
+    private val _pollIntervalMs = MutableStateFlow(LiveMetricsRepository.DEFAULT_INTERVAL_MS)
+    val pollIntervalMs: StateFlow<Long> = _pollIntervalMs.asStateFlow()
+
     @Volatile
     private var initialized = false
 
@@ -78,6 +83,10 @@ object AppSettingsStore {
         _consoleHistory.value = decodeHistory(p.getString(KEY_CONSOLE_HISTORY, null))
         _searchHistory.value = decodeSearchHistory(p.getString(KEY_SEARCH_HISTORY, null))
         _hapticFeedback.value = p.getBoolean(KEY_HAPTIC_FEEDBACK, true)
+        _pollIntervalMs.value = p.getLong(KEY_POLL_INTERVAL, LiveMetricsRepository.DEFAULT_INTERVAL_MS)
+            .coerceIn(LiveMetricsRepository.MIN_INTERVAL_MS, LiveMetricsRepository.MAX_INTERVAL_MS)
+        // Apply the persisted cadence before the first subscriber arrives.
+        LiveMetricsRepository.setInterval(_pollIntervalMs.value)
         initialized = true
     }
 
@@ -131,6 +140,16 @@ object AppSettingsStore {
         if (updated == _searchHistory.value) return
         _searchHistory.value = updated
         prefs(context).edit().putString(KEY_SEARCH_HISTORY, updated.joinToString(SEARCH_SEPARATOR)).apply()
+    }
+
+    fun setPollInterval(context: Context, milliseconds: Long) {
+        val clamped = milliseconds.coerceIn(
+            LiveMetricsRepository.MIN_INTERVAL_MS,
+            LiveMetricsRepository.MAX_INTERVAL_MS
+        )
+        _pollIntervalMs.value = clamped
+        LiveMetricsRepository.setInterval(clamped)
+        prefs(context).edit().putLong(KEY_POLL_INTERVAL, clamped).apply()
     }
 
     fun setHapticFeedback(context: Context, enabled: Boolean) {

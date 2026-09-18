@@ -27,13 +27,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.BatteryDataProvider
-import com.icy.devcheckplus.data.LiveMetrics
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.components.ChartSeries
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.InfoSectionCard
 import com.icy.devcheckplus.ui.components.LiveChartCard
-import com.icy.devcheckplus.ui.components.rememberLiveMetrics
+import com.icy.devcheckplus.ui.components.LiveTelemetryEffect
+import com.icy.devcheckplus.ui.components.collectLiveMetrics
+import com.icy.devcheckplus.ui.components.rememberSamplingLabel
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import kotlin.math.abs
@@ -55,7 +56,9 @@ fun BatteryScreen(
     }
 
     val showCharts = searchQuery.isBlank()
-    val metrics = rememberLiveMetrics(enabled = showCharts)
+    // See HardwareScreen: register interest without reading state at this level,
+    // so a per-second sample cannot invalidate the section list.
+    LiveTelemetryEffect(enabled = showCharts)
 
     if (loading) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -90,17 +93,13 @@ fun BatteryScreen(
             LazyColumn(modifier = modifier.fillMaxSize()) {
                 if (showCharts) {
                     item(key = "battery_telemetry_header") {
-                        GlassSectionHeader(
-                            title = "LIVE TELEMETRY",
-                            icon = Icons.Default.Speed,
-                            supporting = if (metrics.batteryLevel >= 0) "${metrics.batteryLevel}% • ${if (metrics.batteryCharging) "charging" else "discharging"}" else "1 s sampling"
-                        )
+                        BatteryTelemetryHeader()
                     }
                     item(key = "battery_chart_temp") {
-                        TemperatureChart(metrics = metrics)
+                        TemperatureChart()
                     }
                     item(key = "battery_chart_drain") {
-                        DrainRateChart(metrics = metrics)
+                        DrainRateChart()
                     }
                     item(key = "battery_details_header") {
                         GlassSectionHeader(title = "DETAILS", icon = Icons.Default.BatteryChargingFull)
@@ -118,7 +117,23 @@ fun BatteryScreen(
 }
 
 @Composable
-private fun TemperatureChart(metrics: LiveMetrics) {
+private fun BatteryTelemetryHeader() {
+    val metrics = collectLiveMetrics()
+    GlassSectionHeader(
+        title = "LIVE TELEMETRY",
+        icon = Icons.Default.Speed,
+        supporting = if (metrics.batteryLevel >= 0) {
+            "${metrics.batteryLevel}% • ${if (metrics.batteryCharging) "charging" else "discharging"}"
+        } else {
+            rememberSamplingLabel()
+        }
+    )
+}
+
+@Composable
+private fun TemperatureChart() {
+    // Scoped state read: only this card recomposes when a sample lands.
+    val metrics = collectLiveMetrics()
     val samples = remember(metrics.batteryTempC) { metrics.batteryTempC.filter { it > 0f } }
     val domain = remember(samples) {
         if (samples.size < 2) {
@@ -159,7 +174,8 @@ private fun TemperatureChart(metrics: LiveMetrics) {
 }
 
 @Composable
-private fun DrainRateChart(metrics: LiveMetrics) {
+private fun DrainRateChart() {
+    val metrics = collectLiveMetrics()
     val scheme = MaterialTheme.colorScheme
     val samples = remember(metrics.batteryCurrentMa) { metrics.batteryCurrentMa.filter { abs(it) > 0.5f } }
     val domain = remember(samples) {
