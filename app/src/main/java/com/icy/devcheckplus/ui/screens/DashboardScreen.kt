@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,7 +52,16 @@ import com.icy.devcheckplus.data.PinnableCategory
 import com.icy.devcheckplus.data.PinnedEntry
 import com.icy.devcheckplus.data.PinnedItemKey
 import com.icy.devcheckplus.data.PinnedItemsStore
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.GlassEmptyState
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.LocalSearchFocus
+import com.icy.devcheckplus.ui.components.MatchHighlightShape
+import com.icy.devcheckplus.ui.components.rememberMatchHighlight
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.PinToggleButton
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
@@ -79,9 +89,11 @@ import kotlin.math.roundToInt
  * single field they display, so one poll tick repaints three small tiles instead
  * of the pinned list, the header card and the whole screen.
  */
+@OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun DashboardScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -130,88 +142,119 @@ fun DashboardScreen(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        Spacer(modifier = Modifier.height(10.dp))
+    // Manual fallback alongside polling: pull the dashboard down to re-read every
+    // pinned category. The same `reloadToken` the refresh button bumps, so both
+    // entry points share one code path (and its watchdogs).
+    val pullState = rememberPullRefreshState(
+        refreshing = loading,
+        onRefresh = { reloadToken++ }
+    )
 
-        DashboardHeaderCard(
-            hasPins = hasPins,
-            matchCount = pins.size,
-            searchQuery = searchQuery,
-            loading = loading,
-            lastUpdated = lastUpdated,
-            onRefresh = { reloadToken++ },
-            onClearClick = { showClearDialog = true }
-        )
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .pullRefresh(pullState)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Spacer(modifier = Modifier.height(10.dp))
 
-        if (!hasPins) {
-            EmptyDashboard(modifier = Modifier.weight(1f))
-        } else if (pins.isEmpty()) {
-            // Everything is pinned, nothing matches the active search.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No pinned row matches \"$searchQuery\"",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+            DashboardHeaderCard(
+                hasPins = hasPins,
+                matchCount = pins.size,
+                searchQuery = searchQuery,
+                loading = loading,
+                lastUpdated = lastUpdated,
+                onRefresh = { reloadToken++ },
+                onClearClick = { showClearDialog = true }
+            )
+
+            if (!hasPins) {
+                EmptyDashboard(modifier = Modifier.weight(1f))
+            } else if (pins.isEmpty()) {
+                // Rows are pinned, but none matches the active search.
+                GlassEmptyState(
+                    icon = Icons.Default.SearchOff,
+                    title = "No pinned row matches \"$searchQuery\"",
+                    message = "Pinned rows are matched on their name, their section and their category. " +
+                        "Clear the search to see all ${pinnedKeys.size} of them.",
+                    modifier = Modifier.weight(1f)
                 )
-            }
-        } else {
-            val listState = rememberLazyListState()
-            TrackScrollActivity(listState)
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentPadding = PaddingValues(bottom = 28.dp)
-            ) {
-                grouped.forEach { (category, rows) ->
-                    item(key = "header_${category.name}") {
-                        GlassSectionHeader(
-                            title = category.label.uppercase(Locale.US),
-                            icon = Icons.Default.Star,
-                            supporting = "${rows.size} pinned"
-                        )
+            } else {
+                val listState = rememberLazyListState()
+                TrackScrollActivity(listState)
+
+                // Two items are emitted per category (its header and its card), so the
+                // first match locates its group at `group * 2`.
+                val locatedGroup = remember(grouped, searchQuery) {
+                    if (searchQuery.isBlank()) -1 else grouped.indexOfFirst { (_, rows) ->
+                        rows.any {
+                            it.key.item.contains(searchQuery, ignoreCase = true) ||
+                                it.key.section.contains(searchQuery, ignoreCase = true)
+                        }
                     }
-                    item(key = "card_${category.name}") {
-                        GlassCard(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                            frosted = false
-                        ) {
-                            rows.forEachIndexed { index, entry ->
-                                PinnedRow(entry = entry)
-                                if (index < rows.lastIndex) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(vertical = 4.dp),
-                                        color = scheme.onSurface.copy(alpha = 0.06f),
-                                        thickness = 0.8.dp
-                                    )
+                }
+                LocateMatchEffect(
+                    listState = listState,
+                    token = locateToken,
+                    targetIndex = if (locatedGroup >= 0) locatedGroup * 2 else -1
+                )
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentPadding = PaddingValues(bottom = 28.dp)
+                ) {
+                    grouped.forEach { (category, rows) ->
+                        item(key = "header_${category.name}") {
+                            GlassSectionHeader(
+                                title = category.label.uppercase(Locale.US),
+                                icon = Icons.Default.Star,
+                                supporting = "${rows.size} pinned"
+                            )
+                        }
+                        item(key = "card_${category.name}") {
+                            GlassCard(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
+                                shape = RoundedCornerShape(18.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                frosted = false
+                            ) {
+                                rows.forEachIndexed { index, entry ->
+                                    PinnedRow(entry = entry)
+                                    if (index < rows.lastIndex) {
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(vertical = 4.dp),
+                                            color = scheme.onSurface.copy(alpha = 0.06f),
+                                            thickness = 0.8.dp
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                item(key = "dashboard_footer") {
-                    Text(
-                        text = "Values are re-read from their category on refresh — the same watchdogs as the rest of the app apply.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 14.dp)
-                    )
+                    item(key = "dashboard_footer") {
+                        Text(
+                            text = "Values are re-read from their category on refresh — the same watchdogs as the rest of the app apply.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = scheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 14.dp)
+                        )
+                    }
                 }
             }
         }
+
+        PullRefreshIndicator(
+            refreshing = loading,
+            state = pullState,
+            modifier = Modifier.align(Alignment.TopCenter),
+            backgroundColor = scheme.surface,
+            contentColor = scheme.primary
+        )
     }
 
     if (showClearDialog) {
@@ -343,10 +386,18 @@ private fun PinnedRow(entry: PinnedEntry) {
     val value = item?.value
     val restricted = value == null || value.contains("Unavailable", ignoreCase = true)
 
+    // A committed search pulses the pinned row it located (and only that row).
+    val focus = LocalSearchFocus.current
+    val isMatch = focus.active &&
+        (focus.matches(entry.key.item) || focus.matches(entry.key.section) || focus.matches(entry.key.category.label))
+    val highlight = rememberMatchHighlight(active = isMatch, trigger = focus.token)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .clip(MatchHighlightShape)
+            .background(scheme.primary.copy(alpha = highlight))
+            .padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {

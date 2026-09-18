@@ -281,7 +281,9 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .height(54.dp),
+                        // heightIn, not height: at 130 %+ font scale the field grows
+                        // with its text instead of clipping it.
+                        .heightIn(min = 54.dp),
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     placeholder = {

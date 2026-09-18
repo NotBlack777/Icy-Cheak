@@ -15,7 +15,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.SensorsOff
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,12 +36,16 @@ import com.icy.devcheckplus.model.SensorLiveData
 import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.MiniGraph
+import com.icy.devcheckplus.ui.components.GlassEmptyState
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.components.locateRowIndex
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 
 @Composable
 fun SensorsScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -75,14 +81,29 @@ fun SensorsScreen(
     }
 
     if (filteredSensors.isEmpty()) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = if (searchQuery.isNotBlank()) "No sensors match \"$searchQuery\"" else "No hardware sensors detected",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        GlassEmptyState(
+            icon = if (searchQuery.isNotBlank()) Icons.Default.SearchOff else Icons.Default.SensorsOff,
+            title = if (searchQuery.isNotBlank()) "Nothing matches \"$searchQuery\"" else "No sensors reporting",
+            message = if (searchQuery.isNotBlank()) {
+                "Sensors are matched on their name and their vendor."
+            } else {
+                "This device exposes no sensor the app can read, or the sensor service is " +
+                    "unavailable on this build."
+            }
+        )
     } else {
+        LocateMatchEffect(
+            listState = listState,
+            token = locateToken,
+            targetIndex = locateRowIndex(
+                items = filteredSensors,
+                query = searchQuery,
+                headerCount = 1,
+                predicate = { sensor, query ->
+                    sensor.name.contains(query, true) || sensor.vendor.contains(query, true)
+                }
+            )
+        )
         LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
             item(key = "sensors_header") {
                 GlassSectionHeader(

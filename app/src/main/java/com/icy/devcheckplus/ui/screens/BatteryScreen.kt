@@ -30,9 +30,14 @@ import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.BatteryDataProvider
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.components.ChartSeries
+import com.icy.devcheckplus.ui.components.GlassEmptyState
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.InfoSectionCard
 import com.icy.devcheckplus.ui.components.LiveChartCard
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.SkeletonChart
+import com.icy.devcheckplus.ui.components.SkeletonList
+import com.icy.devcheckplus.ui.components.locateSectionIndex
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.liveMetric
 import com.icy.devcheckplus.ui.components.rememberLiveMetric
@@ -46,6 +51,7 @@ import kotlin.math.abs
 @Composable
 fun BatteryScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -65,8 +71,10 @@ fun BatteryScreen(
     TrackScrollActivity(listState)
 
     if (loading) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        Column(modifier = modifier.fillMaxSize()) {
+            SkeletonChart()
+            SkeletonChart()
+            SkeletonList(count = 4)
         }
     } else {
         val filteredSections = remember(sections, searchQuery) {
@@ -86,14 +94,18 @@ fun BatteryScreen(
         }
 
         if (filteredSections.isEmpty() && !showCharts) {
-            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "No battery items match \"$searchQuery\"",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            GlassEmptyState(
+                icon = Icons.Default.SearchOff,
+                title = "Nothing matches \"$searchQuery\"",
+                message = "Battery rows are matched on their name and their value. Clear the " +
+                    "search to bring the live charts back."
+            )
         } else {
+            LocateMatchEffect(
+                listState = listState,
+                token = locateToken,
+                targetIndex = locateSectionIndex(filteredSections, searchQuery, headerCount = 0)
+            )
             LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
                 if (showCharts) {
                     item(key = "battery_telemetry_header") {

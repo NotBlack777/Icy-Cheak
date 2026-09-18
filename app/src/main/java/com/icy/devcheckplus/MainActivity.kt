@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,6 +73,7 @@ import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
 import com.icy.devcheckplus.ui.components.ScrollActivityProvider
+import com.icy.devcheckplus.ui.components.SearchFocusProvider
 import com.icy.devcheckplus.ui.components.SearchSuggestionRow
 import com.icy.devcheckplus.ui.components.UpdateDialogHost
 import com.icy.devcheckplus.ui.components.rememberHapticTick
@@ -188,6 +190,18 @@ fun MainAppContainer() {
 private class SearchState {
     var query by mutableStateOf("")
     var focused by mutableStateOf(false)
+
+    /**
+     * Incremented every time the user *commits* a search (taps a recent-search
+     * chip, or presses the keyboard's Search action). Screens use it to scroll to
+     * the first match and pulse it once — deliberately not tied to typing, which
+     * would fight the user's scroll position on every keystroke.
+     */
+    var locateToken by mutableIntStateOf(0)
+
+    fun commitLocate() {
+        locateToken++
+    }
 }
 
 @Composable
@@ -317,19 +331,26 @@ fun MainDashboardScreen(
                     // Reading the query *here* (inside the animation content) is
                     // deliberate: typing invalidates the active screen only.
                     val query = search.query
-                    when (category) {
-                        NavCategory.DASHBOARD -> DashboardScreen(searchQuery = query)
-                        NavCategory.HARDWARE -> HardwareScreen(searchQuery = query)
-                        NavCategory.SOFTWARE -> SoftwareScreen(searchQuery = query)
-                        NavCategory.BATTERY -> BatteryScreen(searchQuery = query)
-                        NavCategory.STORAGE -> StorageScreen(searchQuery = query)
-                        NavCategory.NETWORK -> NetworkScreen(searchQuery = query)
-                        NavCategory.PROCESSES -> ProcessesScreen(searchQuery = query)
-                        NavCategory.APPS -> InstalledAppsScreen(searchQuery = query)
-                        NavCategory.LOGS -> SystemLogsScreen(searchQuery = query)
-                        NavCategory.SENSORS -> SensorsScreen(searchQuery = query)
-                        NavCategory.CONSOLE -> ConsoleScreen()
-                        NavCategory.SETTINGS -> SettingsScreen(onResetOnboarding = onResetOnboarding)
+                    val locate = search.locateToken
+
+                    // One provider for every screen: rows read the committed
+                    // search from the local and highlight themselves, so no row
+                    // type needs an extra parameter. Changes only on commit.
+                    SearchFocusProvider(query = query, token = locate) {
+                        when (category) {
+                            NavCategory.DASHBOARD -> DashboardScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.HARDWARE -> HardwareScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.SOFTWARE -> SoftwareScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.BATTERY -> BatteryScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.STORAGE -> StorageScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.NETWORK -> NetworkScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.PROCESSES -> ProcessesScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.APPS -> InstalledAppsScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.LOGS -> SystemLogsScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.SENSORS -> SensorsScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.CONSOLE -> ConsoleScreen()
+                            NavCategory.SETTINGS -> SettingsScreen(onResetOnboarding = onResetOnboarding)
+                        }
                     }
                 }
             }
@@ -415,6 +436,7 @@ private fun SearchHeader(
                     onSearch = {
                         AppSettingsStore.addSearchTerm(context, search.query)
                         focusManager.clearFocus()
+                        search.commitLocate()
                     }
                 ),
                 shape = RoundedCornerShape(24.dp),
@@ -433,13 +455,18 @@ private fun SearchHeader(
             )
         }
 
-        // Quick-tap recent searches while the field is focused and empty.
-        if (search.focused && search.query.isEmpty() && searchHistory.isNotEmpty()) {
+        // Quick-tap recent searches while the field is focused and empty. Rendered
+        // even with no history, so the strip can show its own empty state instead of
+        // appearing (and shifting the content below) only after the first search.
+        if (search.focused && search.query.isEmpty()) {
             SearchSuggestionRow(
                 suggestions = searchHistory,
                 onSuggestionClick = { term ->
                     search.query = term
                     AppSettingsStore.addSearchTerm(context, term)
+                    // Tapping a suggestion is a search result selection: locate the
+                    // first matching row in the list below and pulse it.
+                    search.commitLocate()
                 },
                 onClearHistory = { AppSettingsStore.clearSearchHistory(context) }
             )

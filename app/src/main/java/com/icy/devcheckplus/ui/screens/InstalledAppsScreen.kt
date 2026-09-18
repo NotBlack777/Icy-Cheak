@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -48,12 +50,19 @@ import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.AppsDataProvider
 import com.icy.devcheckplus.model.InstalledAppItem
 import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.GlassEmptyState
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.LocalSearchFocus
+import com.icy.devcheckplus.ui.components.SkeletonList
+import com.icy.devcheckplus.ui.components.locateRowIndex
+import com.icy.devcheckplus.ui.components.rememberMatchHighlight
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.rememberHapticTick
 
 @Composable
 fun InstalledAppsScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -105,9 +114,8 @@ fun InstalledAppsScreen(
         }
 
         if (loading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
+            // Skeleton rows keep the layout stable while the package list is read.
+            SkeletonList(count = 8, modifier = Modifier.fillMaxSize())
         } else {
             val filtered = remember(apps, searchQuery, filterType) {
                 apps.filter { app ->
@@ -123,6 +131,27 @@ fun InstalledAppsScreen(
                     matchesType && matchesQuery
                 }
             }
+
+            if (filtered.isEmpty()) {
+                GlassEmptyState(
+                    icon = Icons.Default.SearchOff,
+                    title = "Nothing matches \"$searchQuery\"",
+                    message = "Apps are matched on their name and their package id. Try the " +
+                        "\"All\", \"User\" or \"System\" filter, or clear the search."
+                )
+            }
+
+            LocateMatchEffect(
+                listState = listState,
+                token = locateToken,
+                targetIndex = locateRowIndex(
+                    items = filtered,
+                    query = searchQuery,
+                    predicate = { app, query ->
+                        app.appName.contains(query, true) || app.packageName.contains(query, true)
+                    }
+                )
+            )
 
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                 // Stable key per package: filtering or toggling a chip now moves
@@ -165,9 +194,22 @@ fun AppItemCard(app: InstalledAppItem) {
     var expanded by remember { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
     val icon = rememberAppIcon(app.packageName)
+    val focus = LocalSearchFocus.current
+    val isMatch = focus.active && (focus.matches(app.appName) || focus.matches(app.packageName))
+    val highlight = rememberMatchHighlight(active = isMatch, trigger = focus.token)
 
+    val highlightColor = scheme.primary
     GlassCard(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            // The pulse is drawn over the card: a card paints its own container
+            // colour after the caller's modifiers, so a background tint would be
+            // hidden behind it.
+            .drawWithContent {
+                drawContent()
+                if (highlight > 0f) drawRect(color = highlightColor, alpha = highlight)
+            },
         shape = RoundedCornerShape(16.dp),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
         frosted = false

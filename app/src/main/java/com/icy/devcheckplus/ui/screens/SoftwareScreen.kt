@@ -23,12 +23,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.SoftwareDataProvider
 import com.icy.devcheckplus.model.InfoSection
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SearchOff
+import com.icy.devcheckplus.ui.components.GlassEmptyState
 import com.icy.devcheckplus.ui.components.InfoSectionCard
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.locateSectionIndex
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 
 @Composable
 fun SoftwareScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -65,19 +71,25 @@ fun SoftwareScreen(
         }
 
         if (filteredSections.isEmpty()) {
-            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "No software items match \"$searchQuery\"",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            GlassEmptyState(
+                icon = Icons.Default.SearchOff,
+                title = "Nothing matches \"$searchQuery\"",
+                message = "Software entries are matched on their name and their value. Clear the " +
+                    "search to see the full list again."
+            )
         } else {
+            // A committed search scrolls to the first matching section; the matching
+            // row pulses once (info rows read LocalSearchFocus themselves).
+            LocateMatchEffect(
+                listState = listState,
+                token = locateToken,
+                targetIndex = locateSectionIndex(filteredSections, searchQuery, headerCount = 0)
+            )
             LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
                 items(filteredSections, key = { it.title }) { sec ->
                     InfoSectionCard(section = sec, category = PinnableCategory.SOFTWARE)
                 }
-                item {
+                item(key = "software_bottom_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }

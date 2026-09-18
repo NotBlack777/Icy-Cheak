@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeveloperBoard
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -31,9 +32,14 @@ import com.icy.devcheckplus.data.HardwareDataProvider
 import com.icy.devcheckplus.data.LiveMetrics
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.components.ChartSeries
+import com.icy.devcheckplus.ui.components.GlassEmptyState
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.InfoSectionCard
 import com.icy.devcheckplus.ui.components.LiveChartCard
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.SkeletonChart
+import com.icy.devcheckplus.ui.components.SkeletonList
+import com.icy.devcheckplus.ui.components.locateSectionIndex
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.liveMetric
 import com.icy.devcheckplus.ui.components.rememberLiveMetricsSnapshot
@@ -44,6 +50,7 @@ import java.util.Locale
 @Composable
 fun HardwareScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -63,8 +70,12 @@ fun HardwareScreen(
     TrackScrollActivity(listState)
 
     if (loading) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        // Skeleton in the final layout instead of a centred spinner: charts keep
+        // their height, so the first real frame does not jump.
+        Column(modifier = modifier.fillMaxSize()) {
+            SkeletonChart()
+            SkeletonChart()
+            SkeletonList(count = 4)
         }
     } else {
         val filteredSections = remember(sections, searchQuery) {
@@ -84,14 +95,21 @@ fun HardwareScreen(
         }
 
         if (filteredSections.isEmpty() && !showCharts) {
-            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "No hardware items match \"$searchQuery\"",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            GlassEmptyState(
+                icon = Icons.Default.SearchOff,
+                title = "Nothing matches \"$searchQuery\"",
+                message = "Hardware rows are matched on their name and their value. Clear the " +
+                    "search to bring the live charts back."
+            )
         } else {
+            // A committed search scrolls to the first matching section and the
+            // matching row pulses once (see InfoRowItem / SearchLocate.kt).
+            LocateMatchEffect(
+                listState = listState,
+                token = locateToken,
+                targetIndex = locateSectionIndex(filteredSections, searchQuery, headerCount = 0)
+            )
+
             // The screen root never reads a telemetry value: the chart cards
             // subscribe for themselves. Previously this composable held the whole
             // LiveMetrics object, so every 1 s sample recomposed the entire

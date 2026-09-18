@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -38,8 +39,33 @@ fun SearchSuggestionRow(
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (suggestions.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
+    if (suggestions.isEmpty()) {
+        // Friendly empty state rather than an empty strip: on a fresh install the
+        // bar explains itself, and the row keeps its slot so nothing jumps once the
+        // first search is recorded.
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.History,
+                contentDescription = null,
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(start = 10.dp, end = 8.dp)
+                    .size(14.dp)
+            )
+            Text(
+                text = "Your recent searches appear here — type two characters and pause.",
+                fontSize = 11.sp,
+                color = scheme.onSurfaceVariant
+            )
+        }
+        return
+    }
     val tick = rememberHapticTick()
 
     Row(

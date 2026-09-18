@@ -52,7 +52,9 @@ fun PinToggleButton(
             tick()
             scope.launch { PinnedItemsStore.toggle(context, pin) }
         },
-        modifier = modifier.size(32.dp)
+        // 48 dp touch target with a 32 dp visual: the star stays small in a dense
+        // row, but the tappable area meets the platform minimum.
+        modifier = modifier.size(48.dp)
     ) {
         Icon(
             imageVector = if (pinned) Icons.Default.Star else Icons.Default.StarBorder,

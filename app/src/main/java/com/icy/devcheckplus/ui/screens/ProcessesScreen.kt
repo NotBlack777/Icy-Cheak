@@ -42,13 +42,19 @@ import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.ProcessDataProvider
 import com.icy.devcheckplus.model.ProcessItem
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.LocalSearchFocus
+import com.icy.devcheckplus.ui.components.SkeletonList
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.components.locateRowIndex
+import com.icy.devcheckplus.ui.components.rememberMatchHighlight
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import kotlinx.coroutines.launch
 
 @Composable
 fun ProcessesScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     var processes by remember { mutableStateOf<List<ProcessItem>>(emptyList()) }
@@ -96,9 +102,9 @@ fun ProcessesScreen(
         }
 
         if (loading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
+            // Skeleton rows instead of a spinner: the list keeps its final shape,
+            // so the first real frame does not jump.
+            SkeletonList(count = 7, modifier = Modifier.fillMaxSize())
         } else if (errorMessage != null && processes.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -139,6 +145,20 @@ fun ProcessesScreen(
                 }
             }
 
+            LocateMatchEffect(
+                listState = listState,
+                token = locateToken,
+                targetIndex = locateRowIndex(
+                    items = filtered,
+                    query = searchQuery,
+                    predicate = { proc, query ->
+                        proc.name.contains(query, true) ||
+                            proc.user.contains(query, true) ||
+                            proc.pid.toString().contains(query)
+                    }
+                )
+            )
+
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                 items(items = filtered, key = { "${it.pid}-${it.name}" }, contentType = { "process" }) { proc ->
                     ProcessCard(item = proc)
@@ -153,10 +173,19 @@ fun ProcessesScreen(
 
 @Composable
 fun ProcessCard(item: ProcessItem) {
-    Card(
+    val focus = LocalSearchFocus.current
+    val isMatch = focus.active &&
+        (focus.matches(item.name) || focus.matches(item.user) || item.pid.toString().contains(focus.query))
+    val highlight = rememberMatchHighlight(active = isMatch, trigger = focus.token)
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -168,11 +197,12 @@ fun ProcessCard(item: ProcessItem) {
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Rounded-square container, matching the icon well every other screen uses.
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(13.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .padding(horizontal = 9.dp, vertical = 8.dp)
             ) {
                 Text(
                     text = item.pid.toString(),
@@ -216,5 +246,14 @@ fun ProcessCard(item: ProcessItem) {
                 }
             }
         }
+    }
+
+        // One-shot pulse over the whole row when a committed search located it.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = highlight))
+        )
     }
 }

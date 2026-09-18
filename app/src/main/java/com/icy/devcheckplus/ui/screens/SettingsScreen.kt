@@ -3,6 +3,7 @@ package com.icy.devcheckplus.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,12 +36,14 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -87,10 +91,12 @@ import com.icy.devcheckplus.ui.components.PillAction
 import com.icy.devcheckplus.ui.components.PollIntervalSheet
 import com.icy.devcheckplus.ui.components.ReportSectionsSheet
 import com.icy.devcheckplus.ui.components.SelectableTile
+import com.icy.devcheckplus.ui.components.SettingsOrganizerSheet
 import com.icy.devcheckplus.ui.components.ThemeModePreview
 import com.icy.devcheckplus.ui.components.TileGrid
 import com.icy.devcheckplus.ui.components.TileIconPreview
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.components.displayIcon
 import com.icy.devcheckplus.ui.components.UpdateStatusLine
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
@@ -111,6 +117,7 @@ import kotlinx.coroutines.launch
  * interval invalidates that card alone — previously all of these flows were read
  * at the top of the screen, which meant the whole LazyColumn re-ran on any change.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(
     onResetOnboarding: () -> Unit = {},
@@ -120,6 +127,7 @@ fun SettingsScreen(
     var showPollIntervalSheet by remember { mutableStateOf(false) }
     var showReportSectionsSheet by remember { mutableStateOf(false) }
     var showAnimationWarning by remember { mutableStateOf(false) }
+    var showOrganizer by remember { mutableStateOf(false) }
     var pendingAnimation by remember { mutableStateOf(BackgroundAnimation.GRADIENT_DRIFT) }
 
     val sectionOrder by UserPreferencesStore.settingsSectionOrder
@@ -139,13 +147,18 @@ fun SettingsScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 36.dp)
         ) {
             item(key = "settings_header") {
-                SettingsHeader()
+                SettingsHeader(onOrganizeSections = { showOrganizer = true })
             }
 
             val visibleSections = sectionOrder.filterNot { it in hiddenSections }
             visibleSections.forEach { section ->
-                item(key = "header_${section.name}") {
-                    GlassSectionHeader(title = section.title, icon = section.icon())
+                // Sticky: the section label pins under the app bar while its card
+                // scrolls, so the grouping stays readable at any scroll offset.
+                stickyHeader(key = "header_${section.name}") {
+                    StickySectionHeader(
+                        title = section.title,
+                        icon = section.displayIcon()
+                    )
                 }
                 item(key = "card_${section.name}") {
                     when (section) {
@@ -212,6 +225,10 @@ fun SettingsScreen(
             )
         }
 
+        if (showOrganizer) {
+            SettingsOrganizerSheet(onDismiss = { showOrganizer = false })
+        }
+
         if (showAnimationWarning) {
             val oled = AppSettingsStore.themeMode
                 .collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
@@ -261,16 +278,21 @@ fun SettingsScreen(
     }
 }
 
-private fun SettingsSectionId.icon(): ImageVector = when (this) {
-    SettingsSectionId.APPEARANCE -> Icons.Default.Palette
-    SettingsSectionId.THEMING -> Icons.Default.ColorLens
-    SettingsSectionId.BACKGROUND -> Icons.Default.Wallpaper
-    SettingsSectionId.PRIVILEGE -> Icons.Default.Lock
-    SettingsSectionId.PRIVACY -> Icons.Default.Public
-    SettingsSectionId.GENERAL -> Icons.Default.Tune
-    SettingsSectionId.UPDATES -> Icons.Default.SystemUpdate
-    SettingsSectionId.EXPORT -> Icons.Default.Share
-    SettingsSectionId.ABOUT -> Icons.Default.Info
+/**
+ * Section label that pins while its card scrolls. The translucent background is
+ * what makes it readable over the card sliding underneath: without it the pinned
+ * label would overlap the glass and both would be unreadable.
+ */
+@Composable
+private fun StickySectionHeader(title: String, icon: ImageVector) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(scheme.background.copy(alpha = 0.92f))
+    ) {
+        GlassSectionHeader(title = title, icon = icon)
+    }
 }
 
 /** Status source — collected where it is displayed, not at screen level. */
@@ -279,7 +301,7 @@ private fun rememberPrivilegeStatus(): PrivilegeStatus =
     PrivilegeManager.status.collectAsStateWithLifecycle(initialValue = PrivilegeManager.status.value).value
 
 @Composable
-private fun SettingsHeader() {
+private fun SettingsHeader(onOrganizeSections: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val status = rememberPrivilegeStatus()
     Row(
@@ -317,6 +339,15 @@ private fun SettingsHeader() {
             )
         }
         StatusPill(status = status)
+        Spacer(modifier = Modifier.width(4.dp))
+        IconButton(onClick = onOrganizeSections) {
+            Icon(
+                imageVector = Icons.Default.Reorder,
+                contentDescription = "Reorder or hide Settings sections",
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 

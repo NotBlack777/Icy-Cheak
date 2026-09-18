@@ -94,6 +94,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    // Pull-to-refresh on the dashboard. The M2 pullRefresh modifier is used on
+    // purpose: material3 1.2.x (the version this BOM pins) has no PullToRefreshBox,
+    // and bumping material3 would drag the whole Compose runtime forward.
+    implementation("androidx.compose.material:material")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
