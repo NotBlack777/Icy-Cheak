@@ -23,10 +23,20 @@ object AppSettingsStore {
     const val KEY_DYNAMIC_COLOR = "pref_dynamic_color"
     const val KEY_CONSOLE_WARNING_ACK = "pref_console_warning_ack"
     const val KEY_CONSOLE_HISTORY = "pref_console_history"
+    const val KEY_SEARCH_HISTORY = "pref_search_history"
 
     /** Maximum number of remembered console commands. */
     private const val MAX_CONSOLE_HISTORY = 20
     private const val HISTORY_SEPARATOR = "\n"
+
+    /** Maximum number of remembered search terms. */
+    private const val MAX_SEARCH_HISTORY = 8
+
+    /** Shorter terms are noise, so they never enter the history. */
+    private const val MIN_SEARCH_TERM_LENGTH = 2
+
+    // Unit separator: a search term can legitimately contain spaces and newlines.
+    private const val SEARCH_SEPARATOR = "\u001F"
 
     private val _themeMode = MutableStateFlow(ThemeMode.SYSTEM)
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
@@ -44,6 +54,10 @@ object AppSettingsStore {
     private val _consoleHistory = MutableStateFlow<List<String>>(emptyList())
     val consoleHistory: StateFlow<List<String>> = _consoleHistory.asStateFlow()
 
+    /** Most recent search term first. */
+    private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
+    val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
+
     @Volatile
     private var initialized = false
 
@@ -58,6 +72,7 @@ object AppSettingsStore {
         _publicIpLookup.value = p.getBoolean(KEY_PUBLIC_IP, false)
         _consoleWarningAck.value = p.getBoolean(KEY_CONSOLE_WARNING_ACK, false)
         _consoleHistory.value = decodeHistory(p.getString(KEY_CONSOLE_HISTORY, null))
+        _searchHistory.value = decodeSearchHistory(p.getString(KEY_SEARCH_HISTORY, null))
         initialized = true
     }
 
@@ -98,6 +113,29 @@ object AppSettingsStore {
         _consoleHistory.value = emptyList()
         prefs(context).edit().remove(KEY_CONSOLE_HISTORY).apply()
     }
+
+    /**
+     * Remembers a search term, most recent first, de-duplicated (case-insensitive)
+     * and capped. Stored as one joined string because a StringSet has no order.
+     */
+    fun addSearchTerm(context: Context, term: String) {
+        val trimmed = term.trim()
+        if (trimmed.length < MIN_SEARCH_TERM_LENGTH) return
+        val updated = (listOf(trimmed) + _searchHistory.value.filter { !it.equals(trimmed, ignoreCase = true) })
+            .take(MAX_SEARCH_HISTORY)
+        if (updated == _searchHistory.value) return
+        _searchHistory.value = updated
+        prefs(context).edit().putString(KEY_SEARCH_HISTORY, updated.joinToString(SEARCH_SEPARATOR)).apply()
+    }
+
+    fun clearSearchHistory(context: Context) {
+        _searchHistory.value = emptyList()
+        prefs(context).edit().remove(KEY_SEARCH_HISTORY).apply()
+    }
+
+    private fun decodeSearchHistory(raw: String?): List<String> =
+        raw?.split(SEARCH_SEPARATOR)?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?.take(MAX_SEARCH_HISTORY) ?: emptyList()
 
     private fun decodeHistory(raw: String?): List<String> =
         raw?.split(HISTORY_SEPARATOR)?.map { it.trim() }?.filter { it.isNotEmpty() }

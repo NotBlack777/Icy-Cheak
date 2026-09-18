@@ -45,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,7 +55,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -66,6 +69,7 @@ import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
+import com.icy.devcheckplus.ui.components.SearchSuggestionRow
 import com.icy.devcheckplus.ui.screens.BatteryScreen
 import com.icy.devcheckplus.ui.screens.ConsoleScreen
 import com.icy.devcheckplus.ui.screens.DashboardScreen
@@ -80,6 +84,7 @@ import com.icy.devcheckplus.ui.screens.SoftwareScreen
 import com.icy.devcheckplus.ui.screens.StorageScreen
 import com.icy.devcheckplus.ui.screens.SystemLogsScreen
 import com.icy.devcheckplus.ui.theme.DevCheckPlusTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -124,10 +129,22 @@ fun MainDashboardScreen(
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var currentCategory by remember { mutableStateOf(NavCategory.DASHBOARD) }
     var searchQuery by remember { mutableStateOf("") }
+    var searchFocused by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val searchHistory by AppSettingsStore.searchHistory.collectAsState()
+
+    // Remember what the user actually searched for: only the term that survives
+    // 1.2 s of idle typing is stored, so intermediate keystrokes are skipped.
+    LaunchedEffect(searchQuery) {
+        val term = searchQuery.trim()
+        if (term.length < 2) return@LaunchedEffect
+        delay(1_200)
+        AppSettingsStore.addSearchTerm(context, term)
+    }
     val privilegeStatus by PrivilegeManager.status.collectAsState()
 
     ModalNavigationDrawer(
@@ -268,7 +285,12 @@ fun MainDashboardScreen(
                                 },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                                keyboardActions = KeyboardActions(
+                                    onSearch = {
+                                        AppSettingsStore.addSearchTerm(context, searchQuery)
+                                        focusManager.clearFocus()
+                                    }
+                                ),
                                 shape = RoundedCornerShape(24.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -279,6 +301,19 @@ fun MainDashboardScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(50.dp)
+                                    .onFocusChanged { searchFocused = it.isFocused }
+                            )
+                        }
+
+                        // Quick-tap recent searches while the field is focused and empty.
+                        if (searchFocused && searchQuery.isEmpty() && searchHistory.isNotEmpty()) {
+                            SearchSuggestionRow(
+                                suggestions = searchHistory,
+                                onSuggestionClick = { term ->
+                                    searchQuery = term
+                                    AppSettingsStore.addSearchTerm(context, term)
+                                },
+                                onClearHistory = { AppSettingsStore.clearSearchHistory(context) }
                             )
                         }
 
