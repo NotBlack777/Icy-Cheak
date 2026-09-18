@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -54,15 +55,16 @@ import com.icy.devcheckplus.ui.components.LocalSearchFocus
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.locateRowIndex
 import com.icy.devcheckplus.ui.components.rememberMatchHighlight
+import com.icy.devcheckplus.ui.components.rememberDeepReadIntervalMs
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import com.icy.devcheckplus.ui.theme.AccentRed
+import com.icy.devcheckplus.ui.components.GlassCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-private const val LOG_REFRESH_INTERVAL_MS = 3_000L
 private const val LOG_LINE_LIMIT = 150
 
 @Composable
@@ -97,10 +99,14 @@ fun SystemLogsScreen(
 
     // Fixed-cadence polling that stops when auto-refresh is off, when the tab is
     // switched away (this leaves composition) or when the app is backgrounded.
-    LaunchedEffect(autoRefresh, foreground) {
+    // The cadence is the global refresh rate's deep-read interval — one logcat
+    // pull is a privileged process spawn, so it is deliberately throttled the
+    // same way as the dashboard's pinned reads.
+    val logRefreshMs = rememberDeepReadIntervalMs()
+    LaunchedEffect(autoRefresh, foreground, logRefreshMs) {
         if (!autoRefresh || !foreground) return@LaunchedEffect
         while (isActive) {
-            delay(LOG_REFRESH_INTERVAL_MS)
+            delay(logRefreshMs)
             val (list, err) = LogcatDataProvider.fetchRecentLogs(LOG_LINE_LIMIT)
             logs = list
             errorMessage = err
@@ -235,21 +241,23 @@ fun LogEntryCard(entry: LogcatEntry) {
     }
 
     val scheme = MaterialTheme.colorScheme
-    Card(
+    // Glass rows: the log list is the longest in the app, so it gets the gradient
+    // tint, hairline border and sheen but no blurred decoration layer.
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 3.dp)
             .clip(RoundedCornerShape(8.dp))
-            // Pulse drawn on top of the card instead of behind it, because a Card
-            // paints its own container colour after the caller's modifiers.
+            // Pulse drawn on top of the card instead of behind it: GlassCard paints
+            // its own layers inside the caller's modifier chain, so drawing after
+            // the content still lands above them.
             .drawWithContent {
                 drawContent()
                 if (highlight > 0f) drawRect(color = scheme.primary, alpha = highlight)
             },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(8.dp),
+        frosted = false,
+        contentPadding = PaddingValues(0.dp)
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             Row(

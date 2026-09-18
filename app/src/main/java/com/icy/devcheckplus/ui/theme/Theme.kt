@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.AccentPalette
 import com.icy.devcheckplus.data.BackgroundAnimation
+import com.icy.devcheckplus.data.CustomGradient
 import com.icy.devcheckplus.data.GradientStyle
 
 /**
@@ -114,6 +115,9 @@ private val DevCheckTypography = Typography(
  *               rewrites the accent roles of whichever base scheme is active.
  * @param gradientStyle surface gradient treatment; forced to
  *                      [GradientStyle.SOLID] in OLED mode.
+ * @param customGradient the saved preset painted when [gradientStyle] is
+ *                      [GradientStyle.CUSTOM]; `null` until the user saves one,
+ *                      which falls back to the default glass tint.
  * @param backgroundAnimation ambient animation; **forced to
  *               [BackgroundAnimation.NONE] in OLED mode** unless
  *               [backgroundAnimationOverride] is set, which the UI only does
@@ -125,6 +129,7 @@ fun DevCheckPlusTheme(
     dynamicColor: Boolean = true,
     accent: AccentPalette = AccentPalette.DEFAULT,
     gradientStyle: GradientStyle = GradientStyle.DEFAULT,
+    customGradient: CustomGradient? = null,
     backgroundAnimation: BackgroundAnimation = BackgroundAnimation.GRADIENT_DRIFT,
     backgroundAnimationOverride: Boolean = false,
     content: @Composable () -> Unit
@@ -163,12 +168,13 @@ fun DevCheckPlusTheme(
         backgroundAnimation
     }
 
-    val glassSpec = remember(themeMode, useDark, effectiveAnimation, gradientStyle) {
+    val glassSpec = remember(themeMode, useDark, effectiveAnimation, gradientStyle, customGradient) {
         glassSpecFor(
             themeMode = themeMode,
             isDark = useDark,
             ambientStyle = effectiveAnimation,
-            gradientStyle = gradientStyle
+            gradientStyle = gradientStyle,
+            customGradient = customGradient
         )
     }
 

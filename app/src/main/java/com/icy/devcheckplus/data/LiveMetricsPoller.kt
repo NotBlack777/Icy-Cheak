@@ -40,14 +40,20 @@ import kotlinx.coroutines.isActive
  */
 object LiveMetricsPoller {
 
-    /** Fastest supported cadence. */
-    const val MIN_INTERVAL_MS = 500L
+    /**
+     * Fastest supported cadence — [RefreshRate.REAL_TIME].
+     *
+     * Lowered from 500 ms so the Real-time refresh rate can actually be honoured;
+     * the re-entrancy guard in [LiveMetricsRepository.sample] still prevents two
+     * overlapping privileged reads inside one window.
+     */
+    const val MIN_INTERVAL_MS = 250L
 
     /** Slowest supported cadence. */
     const val MAX_INTERVAL_MS = 5_000L
 
-    /** Options offered by the Settings picker. */
-    val INTERVAL_OPTIONS_MS: List<Long> = listOf(500L, 1_000L, 2_000L, 5_000L)
+    /** Cadences offered by the Settings picker, in ms. */
+    val INTERVAL_OPTIONS_MS: List<Long> = RefreshRate.values().map { it.intervalMs }
 
     /**
      * How long the ticker keeps running after the last collector goes away.

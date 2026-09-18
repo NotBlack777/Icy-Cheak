@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Info
@@ -66,6 +67,7 @@ internal fun SettingsSectionId.displayIcon(): ImageVector = when (this) {
     SettingsSectionId.GENERAL -> Icons.Default.Tune
     SettingsSectionId.UPDATES -> Icons.Default.SystemUpdate
     SettingsSectionId.EXPORT -> Icons.Default.Share
+    SettingsSectionId.ADVANCED -> Icons.Default.Build
     SettingsSectionId.ABOUT -> Icons.Default.Info
 }
 

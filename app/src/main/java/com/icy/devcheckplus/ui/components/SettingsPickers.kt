@@ -1,5 +1,6 @@
 package com.icy.devcheckplus.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -37,7 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,11 +49,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.AccentPalette
 import com.icy.devcheckplus.data.BackgroundAnimation
+import com.icy.devcheckplus.data.CustomGradient
+import com.icy.devcheckplus.data.ExportFormatPreference
 import com.icy.devcheckplus.data.GradientStyle
-import com.icy.devcheckplus.data.LiveMetricsPoller
+import com.icy.devcheckplus.data.RefreshRate
 import com.icy.devcheckplus.data.ReportSection
+import com.icy.devcheckplus.data.WatchdogTimeout
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.ui.theme.contentColorOn
+import com.icy.devcheckplus.ui.theme.gradientBrush
+import kotlin.math.sin
 
 /**
  * Tappable value chip.
@@ -115,34 +124,62 @@ fun PickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scheme = MaterialTheme.colorScheme
+    // The sheet's own scroll counts as scroll activity: the glass inside a sheet
+    // flattens while it is being flicked exactly like a screen's cards do.
+    val scrollState = rememberScrollState()
+    TrackScrollActivity(scrollState)
+    val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = scheme.surface
+        shape = sheetShape,
+        // Frosted glass rather than Material's flat sheet surface. The container is
+        // transparent and the panel below paints the same layers every card does,
+        // which also means the sheet follows the gradient style, the OLED fallback
+        // and the scroll cross-fade like everything else.
+        containerColor = Color.Transparent,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
+        // Material's own handle would float over the transparent strip above the
+        // panel, so the sheet draws its pill inside the glass instead.
+        dragHandle = null
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = scheme.onSurface
-            )
-            if (!subtitle.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant
+        Box(modifier = Modifier.fillMaxWidth()) {
+            GlassBackdrop(shape = sheetShape, modifier = Modifier.matchParentSize())
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 12.dp, bottom = 14.dp)
+                        .width(38.dp)
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(scheme.onSurface.copy(alpha = 0.30f))
                 )
+
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = scheme.onSurface
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+                content()
             }
-            Spacer(modifier = Modifier.height(14.dp))
-            content()
         }
     }
 }
@@ -201,27 +238,97 @@ fun PickerOptionRow(
     }
 }
 
-/** Polling cadence picker for "Live telemetry polling". */
+/**
+ * Global refresh-rate picker.
+ *
+ * This replaced the old "live telemetry polling" picker: the telemetry interval
+ * is still what the user picks here, but the value now also drives the sensor
+ * publisher, the log viewer's auto-refresh and the dashboard's pinned re-reads,
+ * so there is exactly one cadence to reason about (and one to lower when the
+ * device feels slow). The battery/CPU trade-off is spelled out per option.
+ */
 @Composable
-fun PollIntervalSheet(currentMs: Long, onSelect: (Long) -> Unit, onDismiss: () -> Unit) {
+fun RefreshRateSheet(current: RefreshRate, onSelect: (RefreshRate) -> Unit, onDismiss: () -> Unit) {
+    val rates = remember { RefreshRate.values().toList() }
     PickerSheet(
-        title = "Live telemetry polling",
-        subtitle = "How often CPU frequency, RAM and battery are sampled while a live screen is " +
-            "visible. Faster is smoother but costs more battery; sampling always stops in the background.",
+        title = "Refresh rate",
+        subtitle = "One cadence for everything that updates live: telemetry charts, the Sensors tab, " +
+            "the log viewer's auto-refresh and the dashboard's pinned values.",
         onDismiss = onDismiss
     ) {
-        LiveMetricsPoller.INTERVAL_OPTIONS_MS.forEach { interval ->
+        rates.forEach { rate ->
             PickerOptionRow(
-                label = UserPreferencesStore.formatPollInterval(interval),
-                caption = when (interval) {
-                    500L -> "Smoothest charts • highest battery use"
-                    1_000L -> "Default — one sample per second"
-                    2_000L -> "Half the wake-ups"
-                    5_000L -> "Lowest battery use • coarse charts"
-                    else -> null
-                },
-                selected = interval == currentMs,
-                onClick = { onSelect(interval); onDismiss() }
+                label = "${rate.label}  •  ${UserPreferencesStore.formatPollInterval(rate.intervalMs)}",
+                caption = rate.cost,
+                selected = rate == current,
+                onClick = { onSelect(rate); onDismiss() }
+            )
+        }
+        PickerNote(
+            text = "Real-time may increase battery and CPU usage — every telemetry sample can cost one " +
+                "privileged shell read. Deep re-reads (pinned values, logcat) stay at least 5 s apart " +
+                "whatever you pick here, and all sampling stops in the background."
+        )
+    }
+}
+
+/**
+ * Watchdog duration picker (Settings › Advanced).
+ *
+ * Bounds one *deep* read — a category while exporting a report, or a category
+ * while resolving a pinned dashboard value. Reads run in parallel behind their own
+ * watchdog, so this also bounds the whole export.
+ */
+@Composable
+fun WatchdogSheet(
+    current: WatchdogTimeout,
+    onSelect: (WatchdogTimeout) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val options = remember { WatchdogTimeout.values().toList() }
+    PickerSheet(
+        title = "Watchdog timeout",
+        subtitle = "How long one deep read may take while a report is exported or a pinned value is " +
+            "resolved. A root or Shizuku call that overruns it reports \"Unavailable — request " +
+            "timed out\" instead of hanging the UI.",
+        onDismiss = onDismiss
+    ) {
+        options.forEach { option ->
+            PickerOptionRow(
+                label = option.label,
+                caption = option.tagline,
+                selected = option == current,
+                onClick = { onSelect(option); onDismiss() }
+            )
+        }
+        PickerNote(
+            text = "Longer gives a slow device more chance to answer and a hung shell more time before " +
+                "it is given up on. Categories are collected in parallel, so the whole export is " +
+                "bounded by roughly this value too."
+        )
+    }
+}
+
+/** Default export format picker (Settings › Advanced). */
+@Composable
+fun ExportFormatSheet(
+    current: ExportFormatPreference,
+    onSelect: (ExportFormatPreference) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val options = remember { ExportFormatPreference.values().toList() }
+    PickerSheet(
+        title = "Default export format",
+        subtitle = "What the export action does first. The other format always stays one tap away in " +
+            "the dialog, so nothing becomes unreachable.",
+        onDismiss = onDismiss
+    ) {
+        options.forEach { option ->
+            PickerOptionRow(
+                label = option.label,
+                caption = option.tagline,
+                selected = option == current,
+                onClick = { onSelect(option); onDismiss() }
             )
         }
     }
@@ -336,18 +443,23 @@ private fun BoxScope.AccentSwatchPreview(palette: AccentPalette) {
 @Composable
 fun GradientGrid(
     selected: GradientStyle,
-    onSelect: (GradientStyle) -> Unit
+    onSelect: (GradientStyle) -> Unit,
+    custom: CustomGradient? = null,
+    onCustomize: () -> Unit = {}
 ) {
     val scheme = MaterialTheme.colorScheme
     val styles = remember { GradientStyle.values().toList() }
     TileGrid(items = styles, columns = 2, spacing = 10.dp, aspectRatio = 1f) { tileModifier, style ->
+        val isCustom = style == GradientStyle.CUSTOM
         SelectableTile(
             selected = style == selected,
-            onClick = { onSelect(style) },
+            // The Custom tile opens the editor: picking it without a saved preset
+            // would paint nothing new, and editing is how one gets made.
+            onClick = { if (isCustom) onCustomize() else onSelect(style) },
             modifier = tileModifier,
             label = style.label,
-            supporting = style.tagline,
-            preview = { GradientStylePreview(style = style, scheme = scheme) }
+            supporting = if (isCustom && custom != null) custom.name else style.tagline,
+            preview = { GradientStylePreview(style = style, scheme = scheme, custom = custom) }
         )
     }
 }
@@ -355,10 +467,24 @@ fun GradientGrid(
 @Composable
 private fun BoxScope.GradientStylePreview(
     style: GradientStyle,
-    scheme: androidx.compose.material3.ColorScheme
+    scheme: androidx.compose.material3.ColorScheme,
+    custom: CustomGradient? = null
 ) {
     val surface = scheme.surface
     val brush: Brush = when (style) {
+        // The user's own gradient, painted by the same angle-aware brush the app
+        // uses; a rainbow stand-in until one is saved.
+        GradientStyle.CUSTOM -> custom?.gradientBrush(custom.colors.map { Color(it) })
+            ?: Brush.linearGradient(
+                listOf(
+                    Color(0xFFFF6FA5),
+                    Color(0xFFFFB020),
+                    Color(0xFF2EE6C5),
+                    Color(0xFF4C8DFF),
+                    Color(0xFF9D7BFF)
+                )
+            )
+
         GradientStyle.DEFAULT -> Brush.verticalGradient(
             listOf(scheme.primary.copy(alpha = 0.28f), surface)
         )
@@ -395,7 +521,14 @@ private fun BoxScope.GradientStylePreview(
     }
 }
 
-/** Ambient background style grid — Gradient Drift / Particles / None. */
+/**
+ * Ambient background style grid — one full-tile still preview per style.
+ *
+ * Each preview is a *static* frame of the style it selects (the aurora and the
+ * starfield draw theirs on a small Canvas with a fixed phase), so a grid of seven
+ * tiles costs nothing per second while still showing what the background will
+ * actually look like.
+ */
 @Composable
 fun BackgroundAnimationGrid(
     selected: BackgroundAnimation,
@@ -432,8 +565,7 @@ private fun BoxScope.BackgroundAnimationPreview(
         when (style) {
             BackgroundAnimation.NONE -> Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
+                    .fillMaxSize()
                     .background(Brush.verticalGradient(listOf(scheme.background, scheme.surfaceVariant.copy(alpha = 0.22f))))
             )
 
@@ -456,6 +588,90 @@ private fun BoxScope.BackgroundAnimationPreview(
                             Brush.radialGradient(listOf(scheme.tertiary.copy(alpha = 0.5f), Color.Transparent))
                         )
                 )
+            }
+
+            BackgroundAnimation.AURORA_WAVES -> {
+                val curtains = remember(scheme) {
+                    listOf(
+                        scheme.primary to 0.30f,
+                        scheme.tertiary to 0.52f,
+                        scheme.secondary to 0.74f
+                    )
+                }
+                Canvas(modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    curtains.forEachIndexed { index, (color, anchor) ->
+                        val baseY = h * anchor
+                        val path = Path()
+                        path.moveTo(0f, baseY)
+                        for (i in 1..16) {
+                            val x = w * i / 16f
+                            path.lineTo(x, baseY + h * 0.10f * sin((x / w) * 6f + index * 2f))
+                        }
+                        path.lineTo(w, h)
+                        path.lineTo(0f, h)
+                        path.close()
+                        drawPath(
+                            path = path,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(color.copy(alpha = 0.45f), Color.Transparent),
+                                startY = baseY,
+                                endY = h
+                            )
+                        )
+                    }
+                }
+            }
+
+            BackgroundAnimation.FLOATING_ORBS -> {
+                listOf(
+                    Triple(22.dp, Alignment.CenterStart, scheme.primary),
+                    Triple(30.dp, Alignment.Center, scheme.tertiary),
+                    Triple(16.dp, Alignment.CenterEnd, scheme.secondary)
+                ).forEach { (diameter, alignment, color) ->
+                    Box(
+                        modifier = Modifier
+                            .align(alignment)
+                            .size(diameter)
+                            .background(Brush.radialGradient(listOf(color.copy(alpha = 0.55f), Color.Transparent)))
+                    )
+                }
+                // The lit edge that makes an orb read as a sphere.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(bottom = 6.dp, end = 6.dp)
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.30f))
+                )
+            }
+
+            BackgroundAnimation.MESH_GRADIENT -> {
+                val points = remember(scheme) {
+                    listOf(
+                        Triple(0.22f, 0.28f, scheme.primary),
+                        Triple(0.72f, 0.20f, scheme.tertiary),
+                        Triple(0.34f, 0.82f, scheme.secondary),
+                        Triple(0.84f, 0.74f, scheme.primary)
+                    )
+                }
+                Canvas(modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    points.forEach { (fx, fy, color) ->
+                        val center = Offset(size.width * fx, size.height * fy)
+                        val radius = size.minDimension * 0.75f
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(color.copy(alpha = 0.42f), Color.Transparent),
+                                center = center,
+                                radius = radius
+                            ),
+                            radius = radius,
+                            center = center
+                        )
+                    }
+                }
             }
 
             BackgroundAnimation.PARTICLES -> {
@@ -482,6 +698,31 @@ private fun BoxScope.BackgroundAnimationPreview(
                                 .background(scheme.primary.copy(alpha = alpha))
                         )
                     }
+                }
+            }
+
+            BackgroundAnimation.STARFIELD -> Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .background(Brush.radialGradient(listOf(scheme.primary.copy(alpha = 0.16f), Color.Transparent)))
+            ) {
+                // Fixed pseudo-random field: same stars every recomposition.
+                var seed = 7_919
+                fun next(): Float {
+                    seed = (seed * 1_103_515_245 + 12_345) and 0x7FFFFFFF
+                    return (seed % 1_000) / 1_000f
+                }
+                repeat(26) { index ->
+                    val x = size.width * next()
+                    val y = size.height * next()
+                    val radius = (0.6f + next() * 1.3f) * density
+                    drawCircle(
+                        color = Color.White,
+                        radius = radius,
+                        center = Offset(x, y),
+                        alpha = if (index % 4 == 0) 0.95f else 0.55f
+                    )
                 }
             }
         }

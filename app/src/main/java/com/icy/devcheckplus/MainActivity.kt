@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.DrawerValue
@@ -56,6 +58,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -65,11 +69,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.AppSettingsStore
+import com.icy.devcheckplus.data.FrameMetricsMonitor
 import com.icy.devcheckplus.data.UpdateRepository
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.navigation.NavCategory
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.ui.components.AmbientBackground
 import com.icy.devcheckplus.ui.components.ExportReportDialog
+import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.FrameMetricsPrefEffect
 import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
 import com.icy.devcheckplus.ui.components.ScrollActivityProvider
@@ -98,6 +106,10 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Frame-timing instrumentation (Settings › Advanced › Frame metrics
+        // logging). Attaching here only hands the monitor a window: nothing is
+        // listened to until the user switches it on.
+        FrameMetricsMonitor.attach(window)
         setContent {
             // Appearance prefs are mirrored into StateFlows by AppSettingsStore, so a
             // theme change in Settings is applied app-wide on the next frame.
@@ -114,6 +126,10 @@ class MainActivity : ComponentActivity() {
                 .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.accent.value)
             val gradient by UserPreferencesStore.gradient
                 .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.gradient.value)
+            // Only read while the gradient style is Custom, so saving or switching a
+            // preset recomposes the theme wrapper and nothing else.
+            val customGradient by UserPreferencesStore.activeCustomGradient
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.activeCustomGradient.value)
             val backgroundAnimation by UserPreferencesStore.backgroundAnimation
                 .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.backgroundAnimation.value)
             val backgroundOverride by UserPreferencesStore.backgroundAnimationOverride
@@ -124,6 +140,7 @@ class MainActivity : ComponentActivity() {
                 dynamicColor = dynamicColor,
                 accent = accent,
                 gradientStyle = gradient,
+                customGradient = customGradient,
                 backgroundAnimation = backgroundAnimation,
                 backgroundAnimationOverride = backgroundOverride
             ) {
@@ -131,10 +148,20 @@ class MainActivity : ComponentActivity() {
                 // blur layers, card elevation shadows and the ambient animation
                 // stand down (see ScrollActivity.kt).
                 ScrollActivityProvider {
+                    // Keeps FrameMetricsMonitor's on/off state and its settings
+                    // label in step with the user's performance switches.
+                    FrameMetricsPrefEffect()
                     MainAppContainer()
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        // Removes the platform listener and quits the metrics thread, so nothing
+        // survives the activity it was attached to.
+        FrameMetricsMonitor.detach()
+        super.onDestroy()
     }
 }
 
@@ -160,6 +187,12 @@ fun MainAppContainer() {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // The single ambient layer for the whole app — onboarding included. It sits
+        // above the window background and below everything else, so the translucent
+        // top bar, the frosted drawer and every glass card read against the same
+        // drifting gradient (or the same flat wash, in OLED mode / while scrolling).
+        AmbientBackground(modifier = Modifier.matchParentSize())
+
         if (showOnboarding) {
             OnboardingScreen(onFinished = {
                 showOnboarding = false
@@ -220,8 +253,17 @@ fun MainDashboardScreen(
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier.width(300.dp),
-                drawerContainerColor = MaterialTheme.colorScheme.surface
+                // Transparent on purpose: the drawer paints the same frosted glass
+                // as every other elevated surface, with the app's ambient layer
+                // showing through its rounded edge, instead of a flat surface fill.
+                drawerContainerColor = Color.Transparent,
+                drawerShape = RectangleShape
             ) {
+                GlassCard(
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
                 // Drawer Header
                 Column(
                     modifier = Modifier
@@ -284,6 +326,7 @@ fun MainDashboardScreen(
                     fontSize = 11.sp,
                     modifier = Modifier.padding(16.dp)
                 )
+                }
             }
         }
     ) {
@@ -310,16 +353,21 @@ fun MainDashboardScreen(
                         search = search,
                         currentCategory = currentCategory,
                         onOpenDrawer = { scope.launch { drawerState.open() } },
-                        onStatusClick = { currentCategory = NavCategory.SETTINGS }
+                        onStatusClick = { currentCategory = NavCategory.SETTINGS },
+                        onOpenConsole = {
+                            hapticTick()
+                            currentCategory = NavCategory.CONSOLE
+                        }
                     )
                 }
             }
         ) { innerPadding ->
+            // Transparent: the app-wide ambient layer behind the Scaffold shows
+            // through, including behind the translucent top bar.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .background(MaterialTheme.colorScheme.background)
             ) {
                 AnimatedContent(
                     targetState = currentCategory,
@@ -374,12 +422,16 @@ private fun SearchHeader(
     search: SearchState,
     currentCategory: NavCategory,
     onOpenDrawer: () -> Unit,
-    onStatusClick: () -> Unit
+    onStatusClick: () -> Unit,
+    onOpenConsole: () -> Unit
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val searchHistory by AppSettingsStore.searchHistory
         .collectAsStateWithLifecycle(initialValue = AppSettingsStore.searchHistory.value)
+    // Settings › Advanced › Console shortcut in header.
+    val consoleShortcut by UserPreferencesStore.consoleQuickAccess
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.consoleQuickAccess.value)
 
     // Remember what the user actually searched for: only the term that survives
     // 1.2 s of idle typing is stored, so intermediate keystrokes are skipped.
@@ -453,6 +505,18 @@ private fun SearchHeader(
                     .heightIn(min = 50.dp)
                     .onFocusChanged { search.focused = it.isFocused }
             )
+
+            // One tap to Console from any category — the power-user shortcut. Hidden
+            // on Console itself, where it would do nothing.
+            if (consoleShortcut && currentCategory != NavCategory.CONSOLE) {
+                IconButton(onClick = onOpenConsole) {
+                    Icon(
+                        imageVector = Icons.Default.Terminal,
+                        contentDescription = "Open console",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
 
         // Quick-tap recent searches while the field is focused and empty. Rendered

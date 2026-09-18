@@ -2,6 +2,7 @@ package com.icy.devcheckplus.ui.screens
 
 import com.icy.devcheckplus.ui.components.rememberHapticTick
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -64,7 +64,11 @@ import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.GlassDialog
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.theme.LocalGlassSpec
+import com.icy.devcheckplus.ui.theme.solidSurface
+import com.icy.devcheckplus.ui.theme.surfaceBrush
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -437,18 +441,11 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
     }
 
     if (showWarning) {
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { showWarning = false },
-            shape = MaterialTheme.shapes.large,
-            containerColor = MaterialTheme.colorScheme.surface,
-            title = {
-                Text(
-                    text = "Advanced feature",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
-                )
-            },
+            title = "Advanced feature",
+            // The warning keeps its red title on the frosted panel.
+            titleColor = MaterialTheme.colorScheme.error,
             text = {
                 Column {
                     Text(
@@ -515,11 +512,30 @@ private fun OutputPane(
             }
         }
     }
+    // The pane is the console's one large surface, so it paints through the shared
+    // brush like every card: the user's gradient style (including a custom
+    // gradient) and the scroll cross-fade apply here too, with a hairline edge to
+    // finish it. No blurred decoration layer — this pane is tall and it scrolls.
+    val scheme = MaterialTheme.colorScheme
+    val spec = LocalGlassSpec.current
+    val paneBrush = remember(spec.gradientStyle, spec.customGradient, scheme) {
+        spec.gradientStyle.surfaceBrush(scheme, 0.55f)
+    }
+    val paneFill = if (paneBrush != null) {
+        Modifier.background(paneBrush)
+    } else {
+        Modifier.background(spec.gradientStyle.solidSurface(scheme, 0.55f))
+    }
     LazyColumn(
         state = state,
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+            .then(paneFill)
+            .border(
+                width = 1.dp,
+                color = scheme.onSurface.copy(alpha = spec.borderAlpha),
+                shape = RoundedCornerShape(16.dp)
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {

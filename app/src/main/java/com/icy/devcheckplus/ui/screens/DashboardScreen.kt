@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +56,7 @@ import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.GlassDialog
 import com.icy.devcheckplus.ui.components.GlassEmptyState
 import com.icy.devcheckplus.ui.components.LocateMatchEffect
 import com.icy.devcheckplus.ui.components.LocalSearchFocus
@@ -65,10 +65,13 @@ import com.icy.devcheckplus.ui.components.rememberMatchHighlight
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.PinToggleButton
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.components.rememberDeepReadIntervalMs
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.components.rememberLiveMetric
 import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
 import com.icy.devcheckplus.ui.theme.AccentOrange
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -103,16 +106,27 @@ fun DashboardScreen(
 
     val pinnedKeys by PinnedItemsStore.pinnedKeys(context).collectAsStateWithLifecycle(initialValue = emptySet())
     val hasPins = pinnedKeys.isNotEmpty()
-    val pins = remember(pinnedKeys, searchQuery) {
-        val query = searchQuery.trim()
+
+    // Decoding is keyed on the stored key set only. The search filter is applied
+    // *below*, to the already-resolved entries: keying the load effect on a
+    // search-filtered list (as before) meant every keystroke produced a new list
+    // instance, restarted the effect and re-read whole categories — a privileged
+    // shell call per keystroke, plus a visible reload flicker while typing.
+    val allPins = remember(pinnedKeys) {
         pinnedKeys.mapNotNull { PinnedItemKey.decode(it) }
-            .filter {
-                query.isEmpty() ||
-                    it.item.contains(query, ignoreCase = true) ||
+            .sortedWith(compareBy({ it.category.ordinal }, { it.section }, { it.item }))
+    }
+    val pins = remember(allPins, searchQuery) {
+        val query = searchQuery.trim()
+        if (query.isEmpty()) {
+            allPins
+        } else {
+            allPins.filter {
+                it.item.contains(query, ignoreCase = true) ||
                     it.section.contains(query, ignoreCase = true) ||
                     it.category.label.contains(query, ignoreCase = true)
             }
-            .sortedWith(compareBy({ it.category.ordinal }, { it.section }, { it.item }))
+        }
     }
 
     var entries by remember { mutableStateOf<List<PinnedEntry>>(emptyList()) }
@@ -121,23 +135,50 @@ fun DashboardScreen(
     var reloadToken by remember { mutableStateOf(0) }
     var showClearDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(pins, foreground, reloadToken) {
+    LaunchedEffect(allPins, foreground, reloadToken) {
         if (!foreground) return@LaunchedEffect
-        if (pins.isEmpty()) {
+        if (allPins.isEmpty()) {
             entries = emptyList()
             lastUpdated = null
             loading = false
             return@LaunchedEffect
         }
         loading = true
-        entries = PinnedItemsStore.loadEntries(context, pins)
+        entries = PinnedItemsStore.loadEntries(context, allPins)
         lastUpdated = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         loading = false
     }
 
-    val grouped = remember(entries) {
+    // Pinned values follow the *global* refresh rate too — but through its
+    // deep-read cadence (see RefreshRate.deepReadIntervalMs), because resolving a
+    // pin re-reads whole categories and can cost a privileged shell call. At
+    // Real-time that is still only every 5 s, so a fast UI rate cannot turn the
+    // dashboard into a polling hammer. The loop is cancelled by leaving the tab
+    // or backgrounding the app, and never overlaps a manual refresh.
+    val deepIntervalMs = rememberDeepReadIntervalMs()
+    LaunchedEffect(allPins, foreground, deepIntervalMs) {
+        if (!foreground || allPins.isEmpty()) return@LaunchedEffect
+        while (isActive) {
+            delay(deepIntervalMs)
+            if (loading) continue
+            entries = PinnedItemsStore.loadEntries(context, allPins)
+            lastUpdated = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        }
+    }
+
+    // Search narrows the resolved entries in memory — no I/O, no effect restart.
+    val visibleEntries = remember(entries, pins) {
+        if (pins.size == entries.size) {
+            entries
+        } else {
+            val wanted = pins.toSet()
+            entries.filter { it.key in wanted }
+        }
+    }
+
+    val grouped = remember(visibleEntries) {
         PinnableCategory.values().mapNotNull { category ->
-            val rows = entries.filter { it.key.category == category }
+            val rows = visibleEntries.filter { it.key.category == category }
             if (rows.isEmpty()) null else category to rows
         }
     }
@@ -164,6 +205,7 @@ fun DashboardScreen(
                 searchQuery = searchQuery,
                 loading = loading,
                 lastUpdated = lastUpdated,
+                autoRefreshLabel = "auto every ${deepIntervalMs / 1000L} s",
                 onRefresh = { reloadToken++ },
                 onClearClick = { showClearDialog = true }
             )
@@ -258,11 +300,9 @@ fun DashboardScreen(
     }
 
     if (showClearDialog) {
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { showClearDialog = false },
-            shape = MaterialTheme.shapes.large,
-            containerColor = scheme.surface,
-            title = { Text("Unpin everything?", style = MaterialTheme.typography.titleMedium) },
+            title = "Unpin everything?",
             text = {
                 Text(
                     text = "This removes all ${pins.size} pinned rows from the dashboard. The underlying data is untouched.",
@@ -298,6 +338,7 @@ private fun DashboardHeaderCard(
     searchQuery: String,
     loading: Boolean,
     lastUpdated: String?,
+    autoRefreshLabel: String,
     onRefresh: () -> Unit,
     onClearClick: () -> Unit
 ) {
@@ -336,7 +377,7 @@ private fun DashboardHeaderCard(
                         !hasPins -> "Star any row to pin it here"
                         matchCount == 0 -> "No pinned row matches \"$searchQuery\""
                         loading -> "Resolving pinned values…"
-                        lastUpdated != null -> "$matchCount pinned • updated $lastUpdated"
+                        lastUpdated != null -> "$matchCount pinned • updated $lastUpdated • $autoRefreshLabel"
                         else -> "$matchCount pinned"
                     },
                     style = MaterialTheme.typography.labelSmall,

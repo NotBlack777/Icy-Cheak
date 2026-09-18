@@ -42,6 +42,7 @@ import com.icy.devcheckplus.ui.components.SkeletonList
 import com.icy.devcheckplus.ui.components.locateSectionIndex
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.liveMetric
+import com.icy.devcheckplus.ui.components.rememberLiveGraphsEnabled
 import com.icy.devcheckplus.ui.components.rememberLiveMetric
 import com.icy.devcheckplus.ui.components.rememberLiveMetricsSnapshot
 import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
@@ -154,7 +155,9 @@ private fun BatteryTelemetryHeader() {
 
 @Composable
 private fun TemperatureChart() {
-    val snapshot = rememberLiveMetricsSnapshot()
+    // Master switch: no subscription and no Canvas when live graphs are off.
+    val liveGraphs = rememberLiveGraphsEnabled()
+    val snapshot = rememberLiveMetricsSnapshot(enabled = liveGraphs)
     val tempC = snapshot.liveMetric { it.batteryTempC }
     val temperatureReadable = snapshot.liveMetric { it.temperatureReadable }
     val latestTempC = snapshot.liveMetric { it.latestTempC }
@@ -195,14 +198,16 @@ private fun TemperatureChart() {
         yMax = domain.second,
         topLabel = if (domain.second > domain.first) String.format(Locale.US, "%.1f °C", domain.second) else null,
         bottomLabel = if (domain.second > domain.first) String.format(Locale.US, "%.1f °C", domain.first) else null,
-        chartHeight = 116.dp
+        chartHeight = 116.dp,
+        chartsEnabled = liveGraphs
     )
 }
 
 @Composable
 private fun DrainRateChart() {
     val scheme = MaterialTheme.colorScheme
-    val snapshot = rememberLiveMetricsSnapshot()
+    val liveGraphs = rememberLiveGraphsEnabled()
+    val snapshot = rememberLiveMetricsSnapshot(enabled = liveGraphs)
 
     val currentMa = snapshot.liveMetric { it.batteryCurrentMa }
     val currentReadable = snapshot.liveMetric { it.currentReadable }
@@ -251,6 +256,7 @@ private fun DrainRateChart() {
         yMax = domain.second,
         topLabel = if (domain.second > domain.first) String.format(Locale.US, "%.0f mA", domain.second) else null,
         bottomLabel = if (domain.second > domain.first) String.format(Locale.US, "%.0f mA", domain.first) else null,
-        chartHeight = 116.dp
+        chartHeight = 116.dp,
+        chartsEnabled = liveGraphs
     )
 }

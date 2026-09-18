@@ -62,8 +62,15 @@ private data class ReportModel(
  */
 object DeviceReport {
 
-    /** Per-category watchdog. */
-    private const val CATEGORY_TIMEOUT_MS = 20_000L
+    /**
+     * Per-category watchdog — user configurable (Settings › Advanced › Watchdog
+     * timeout). Read from the in-memory preference mirror, so it costs a field
+     * access and never blocks; a slow device can be given more room and a fast one
+     * can fail sooner instead of waiting out a constant that was picked for
+     * somebody else's shell.
+     */
+    private val categoryTimeoutMs: Long
+        get() = UserPreferencesStore.watchdogTimeout.value.millis
 
     /** Live sensor sampling window (SENSOR_DELAY_NORMAL ≈ 200 ms per sensor). */
     private const val SENSOR_WINDOW_MS = 900L
@@ -189,7 +196,7 @@ object DeviceReport {
         block: suspend (Context) -> List<InfoSection>
     ): List<InfoSection> {
         return try {
-            val result = withTimeoutOrNull(CATEGORY_TIMEOUT_MS) { block(context) }
+            val result = withTimeoutOrNull(categoryTimeoutMs) { block(context) }
             result ?: unavailable(label, "Unavailable — request timed out")
         } catch (interrupted: kotlinx.coroutines.CancellationException) {
             throw interrupted
@@ -356,7 +363,7 @@ object DeviceReport {
     /** One extra sample so CPU/RAM/battery numbers are present even if those tabs were never opened. */
     private suspend fun telemetrySections(context: Context): List<InfoSection> {
         val metrics = try {
-            withTimeoutOrNull(CATEGORY_TIMEOUT_MS) { LiveMetricsRepository.sample(context) }
+            withTimeoutOrNull(categoryTimeoutMs) { LiveMetricsRepository.sample(context) }
         } catch (t: Throwable) {
             null
         } ?: LiveMetricsRepository.snapshot()

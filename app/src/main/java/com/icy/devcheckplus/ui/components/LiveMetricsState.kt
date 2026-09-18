@@ -1,18 +1,20 @@
 package com.icy.devcheckplus.ui.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.LiveMetrics
 import com.icy.devcheckplus.data.LiveMetricsPoller
 import com.icy.devcheckplus.data.LiveMetricsRepository
+import com.icy.devcheckplus.data.RefreshRate
 import com.icy.devcheckplus.data.UserPreferencesStore
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 
 /**
  * Live telemetry for the Hardware / Battery / Dashboard charts.
@@ -33,19 +35,51 @@ import kotlinx.coroutines.flow.flowOf
  * in front) and resumes on return. Because the shared ticker in
  * [LiveMetricsPoller] is ref-counted, a paused last collector stops sampling
  * altogether — no CPU, battery or root reads while the app is in the background.
+ *
+ * [enabled] is the performance escape hatch: with the "Live graphs" master switch
+ * off, chart cards call this with `enabled = false` and get a *static* snapshot
+ * (one sample, no subscription) instead — see [rememberStaticMetricsSnapshot].
+ * The ticker then only keeps running for the surfaces that still subscribe
+ * (the dashboard's text tiles), and if nothing subscribes it stops completely.
  */
 @Composable
 fun rememberLiveMetricsSnapshot(enabled: Boolean = true): State<LiveMetrics> {
     val initial = remember { LiveMetricsRepository.snapshot() }
-    val stream: Flow<LiveMetrics> = remember(enabled) {
-        if (enabled && LiveMetricsPoller.isInitialized()) {
-            LiveMetricsPoller.metrics
-        } else {
-            flowOf(initial)
-        }
+    if (enabled && LiveMetricsPoller.isInitialized()) {
+        return LiveMetricsPoller.metrics.collectAsStateWithLifecycle(initialValue = initial)
     }
-    return stream.collectAsStateWithLifecycle(initialValue = initial)
+    // Not subscribing: take exactly one sample so the static readout shows a real
+    // last-known value, then never touch the sampler again.
+    return rememberStaticMetricsSnapshot(initial)
 }
+
+/** One-shot snapshot seeded from the repository's current buffers. */
+@Composable
+fun rememberStaticMetricsSnapshot(): State<LiveMetrics> =
+    rememberStaticMetricsSnapshot(remember { LiveMetricsRepository.snapshot() })
+
+/**
+ * One-shot snapshot for a *static* readout: a single sample when the composable
+ * enters composition, no ticker subscription, no loop, no per-frame work.
+ *
+ * The sample goes through [LiveMetricsRepository.sample] with a short guard
+ * window, so two static cards mounting at the same moment cost one privileged
+ * read between them rather than two.
+ */
+@Composable
+fun rememberStaticMetricsSnapshot(initial: LiveMetrics): State<LiveMetrics> {
+    val context = LocalContext.current
+    val state = remember { mutableStateOf(initial) }
+    LaunchedEffect(Unit) {
+        state.value = runCatching {
+            LiveMetricsRepository.sample(context, STATIC_SAMPLE_GUARD_MS)
+        }.getOrDefault(state.value)
+    }
+    return state
+}
+
+/** Re-entrancy window for the one-shot static sample. */
+private const val STATIC_SAMPLE_GUARD_MS = 500L
 
 /**
  * One field of the live telemetry snapshot.
@@ -83,15 +117,52 @@ fun <T> State<LiveMetrics>.liveMetric(selector: (LiveMetrics) -> T): T {
 @Composable
 fun rememberLiveMetricsInitial(): LiveMetrics = remember { LiveMetricsRepository.snapshot() }
 
+/* ------------------------------------------------------------------ */
+/*  Performance preferences (Settings › Advanced)                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The "Live graphs" master switch. Read it in the composable that owns a chart
+ * so an off switch removes the canvas, the slide animation *and* the telemetry
+ * subscription instead of leaving an empty gap in the layout.
+ */
+@Composable
+fun rememberLiveGraphsEnabled(): Boolean =
+    UserPreferencesStore.liveGraphsEnabled.collectAsStateWithLifecycle(
+        initialValue = UserPreferencesStore.liveGraphsEnabled.value
+    ).value
+
+/** The global refresh rate — one cadence for every live surface. */
+@Composable
+fun rememberRefreshRate(): RefreshRate =
+    UserPreferencesStore.refreshRate.collectAsStateWithLifecycle(
+        initialValue = UserPreferencesStore.refreshRate.value
+    ).value
+
+/** [RefreshRate.intervalMs] for the current global rate. */
+@Composable
+fun rememberRefreshIntervalMs(): Long = rememberRefreshRate().intervalMs
+
+/**
+ * Cadence for *deep* re-reads (dashboard pins, logcat) derived from the global
+ * refresh rate. These reads cost whole-category provider work (sometimes a
+ * privileged shell), so they are deliberately several ticks apart and never
+ * faster than 5 s, even at Real-time.
+ */
+@Composable
+fun rememberDeepReadIntervalMs(): Long = rememberRefreshRate().deepReadIntervalMs
+
 /**
  * The cadence the shared ticker is actually running at, formatted for humans
  * ("1 s", "0.5 s"). Read it in the label that displays it, so changing the
- * interval in Settings updates that label and nothing else.
+ * refresh rate in Settings updates that label and nothing else.
  */
 @Composable
-fun rememberPollIntervalLabel(): String {
-    val ms by UserPreferencesStore.pollIntervalMs.collectAsStateWithLifecycle(
-        initialValue = UserPreferencesStore.pollIntervalMs.value
-    )
-    return UserPreferencesStore.formatPollInterval(ms)
+fun rememberPollIntervalLabel(): String = rememberRefreshRateLabel()
+
+/** Rate name plus cadence, e.g. "Balanced • 1 s" — for section subtitles. */
+@Composable
+fun rememberRefreshRateLabel(): String {
+    val rate = rememberRefreshRate()
+    return "${rate.label} • ${UserPreferencesStore.formatPollInterval(rate.intervalMs)}"
 }

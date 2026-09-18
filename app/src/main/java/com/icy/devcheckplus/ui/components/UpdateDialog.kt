@@ -72,16 +72,12 @@ fun UpdateDialogHost() {
     // lambda, a local val can.
     val apkAsset = info.apk
 
-    AlertDialog(
+    // Frosted glass panel instead of Material's flat dialog surface, so the update
+    // prompt matches every other elevated surface in the app.
+    GlassDialog(
         onDismissRequest = { UpdateRepository.dismiss(checkState) },
-        icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
-        title = {
-            Text(
-                text = "Update available",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-        },
+        icon = Icons.Default.SystemUpdate,
+        title = "Update available",
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(

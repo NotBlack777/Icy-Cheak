@@ -5,7 +5,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.BackgroundAnimation
+import com.icy.devcheckplus.data.CustomGradient
 import com.icy.devcheckplus.data.GradientStyle
+import kotlin.math.roundToInt
 
 /**
  * Describes how much "liquid glass" the current theme is allowed to use.
@@ -39,6 +41,13 @@ data class GlassSpec(
     val particleCount: Int = 0,
     /** Surface gradient treatment (forced to [GradientStyle.SOLID] in OLED). */
     val gradientStyle: GradientStyle = GradientStyle.DEFAULT,
+    /**
+     * The saved preset that [GradientStyle.CUSTOM] paints, or `null` while the user
+     * has not saved one. Carried on the spec so every surface reads it from the one
+     * place the rest of the glass budget comes from — no brush call site has to go
+     * looking in the preference store.
+     */
+    val customGradient: CustomGradient? = null,
     /** Soft glow around chart strokes / selected tiles. */
     val glow: Boolean = true
 ) {
@@ -119,7 +128,8 @@ fun glassSpecFor(
     themeMode: ThemeMode,
     isDark: Boolean,
     ambientStyle: BackgroundAnimation,
-    gradientStyle: GradientStyle
+    gradientStyle: GradientStyle,
+    customGradient: CustomGradient? = null
 ): GlassSpec {
     val base = when {
         themeMode == ThemeMode.OLED -> GlassSpec.Oled
@@ -136,14 +146,18 @@ fun glassSpecFor(
             ambientStyle == BackgroundAnimation.NONE -> 0f
             else -> 0.45f
         },
+        // Mote budget follows the chosen style: styles without motes allocate
+        // nothing, and the ones with them scale the theme's count by their own
+        // density (orbs need a handful, a starfield needs a field).
         particleCount = when {
-            ambientStyle != BackgroundAnimation.PARTICLES -> 0
-            oled -> 6
-            else -> base.particleCount
+            !ambientStyle.motes -> 0
+            oled -> (6 * ambientStyle.moteDensity).roundToInt().coerceAtLeast(3)
+            else -> (base.particleCount * ambientStyle.moteDensity).roundToInt()
         },
         // Gradients are disabled on OLED for contrast (near-black panels show
         // banding) and for overdraw; the user's choice applies to the other modes.
-        gradientStyle = if (oled) GradientStyle.SOLID else gradientStyle
+        gradientStyle = if (oled) GradientStyle.SOLID else gradientStyle,
+        customGradient = customGradient
     )
 }
 

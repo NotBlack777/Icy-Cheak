@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,6 +44,16 @@ fun ExportReportDialog(onDismiss: () -> Unit) {
     // The report contains exactly the sections chosen in Settings › Export & Share.
     val selectedSections by UserPreferencesStore.reportSections
         .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.reportSections.value)
+    // Settings › Advanced: the format the primary button uses, and the watchdog
+    // duration the collectors are actually running with (quoted in the copy below
+    // instead of a hardcoded "20 second").
+    val formatPreference by UserPreferencesStore.exportFormatPreference
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.exportFormatPreference.value)
+    val watchdog by UserPreferencesStore.watchdogTimeout
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.watchdogTimeout.value)
+    val defaultFormat = formatPreference.format
+    val primaryFormat = defaultFormat ?: ReportFormat.TEXT
+    val secondaryFormat = ReportFormat.values().firstOrNull { it != primaryFormat }
 
     fun start(format: ReportFormat) {
         if (busy != null) return
@@ -72,17 +81,12 @@ fun ExportReportDialog(onDismiss: () -> Unit) {
 
     val scheme = MaterialTheme.colorScheme
 
-    AlertDialog(
+    // Frosted glass, not Material's flat dialog surface: a dialog is one small
+    // panel shown while nothing scrolls, which is exactly what the frosted layer
+    // is for (and it falls back to a solid tint in OLED mode).
+    GlassDialog(
         onDismissRequest = { if (busy == null) onDismiss() },
-        shape = MaterialTheme.shapes.large,
-        containerColor = scheme.surface,
-        title = {
-            Text(
-                text = "Export device report",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        },
+        title = "Export device report",
         text = {
             Column {
                 Text(
@@ -96,8 +100,9 @@ fun ExportReportDialog(onDismiss: () -> Unit) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = "App version and an export timestamp head the report. Each category is guarded by a " +
-                        "20 second watchdog, so a slow permission prompt can never hang the export. " +
-                        "Change the selection in Settings › What is included.",
+                        "${watchdog.seconds} second watchdog, so a slow permission prompt can never hang the " +
+                        "export. Change the selection in Settings › What is included, and the watchdog or " +
+                        "this default format in Settings › Advanced.",
                     style = MaterialTheme.typography.labelSmall,
                     color = scheme.onSurfaceVariant
                 )
@@ -128,18 +133,21 @@ fun ExportReportDialog(onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { start(ReportFormat.TEXT) }, enabled = busy == null) {
-                Text("Plain text")
+            TextButton(onClick = { start(primaryFormat) }, enabled = busy == null) {
+                // With a default set the primary button says exactly what it does.
+                Text(if (defaultFormat != null) "Export ${primaryFormat.label}" else primaryFormat.label)
             }
         },
+        // GlassDialog lays both slots out in one end-aligned row, so the inner Row
+        // the AlertDialog version needed is gone.
         dismissButton = {
-            Row {
-                TextButton(onClick = { start(ReportFormat.JSON) }, enabled = busy == null) {
-                    Text("JSON")
+            if (secondaryFormat != null) {
+                TextButton(onClick = { start(secondaryFormat) }, enabled = busy == null) {
+                    Text(secondaryFormat.label)
                 }
-                TextButton(onClick = onDismiss, enabled = busy == null) {
-                    Text("Cancel")
-                }
+            }
+            TextButton(onClick = onDismiss, enabled = busy == null) {
+                Text("Cancel")
             }
         }
     )

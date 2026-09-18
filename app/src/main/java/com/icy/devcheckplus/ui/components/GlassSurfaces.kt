@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
 import com.icy.devcheckplus.ui.theme.solidSurface
 import com.icy.devcheckplus.ui.theme.surfaceBrush
@@ -65,17 +68,16 @@ fun GlassCard(
     shape: Shape = RoundedCornerShape(20.dp),
     contentPadding: PaddingValues = PaddingValues(18.dp),
     frosted: Boolean = true,
+    overlay: Color = Color.Transparent,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val spec = LocalGlassSpec.current
-    val scheme = MaterialTheme.colorScheme
 
-    // Read in this small scope (the card itself, not the screen): scrolling
-    // start/stop is the only thing that invalidates it, and the content lambda
-    // below is skipped because its parameters did not change. During a fling the
-    // per-card offscreen layers (elevation shadow + blur) are simply not
-    // requested, which is what removes the frame drops on long lists; they come
-    // back the moment the finger lifts.
+    // Only the *binary* decisions live in this scope: while a list is being flung
+    // the card requests no elevation shadow at all (another offscreen layer per
+    // card) and no frosted layer. The gradient cross-fade is animated inside
+    // GlassSurfaceLayer below, so this body — and the card's content lambda, which
+    // Compose skips anyway — does not recompose on every frame of that fade.
     val scrolling = LocalScrollActivity.current.value
     val elevation = if (scrolling) 0.dp else spec.cardElevation
 
@@ -90,32 +92,25 @@ fun GlassCard(
             )
             .clip(shape)
     ) {
-        if (frosted) {
-            FrostedLayer(
-                shape = shape,
-                radius = if (scrolling) 0.dp else spec.cardBlurRadius,
-                primary = scheme.primary,
-                tertiary = scheme.tertiary,
-                modifier = Modifier.matchParentSize()
-            )
-        }
-        // Semi-transparent surface tint (the "glass" body), painted with the
-        // user's gradient style — Solid paints a flat colour instead.
-        val surfaceBrush = remember(scheme, spec.cardAlpha, spec.gradientStyle) {
-            spec.gradientStyle.surfaceBrush(scheme, spec.cardAlpha)
-        }
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .then(
-                    if (surfaceBrush != null) {
-                        Modifier.background(surfaceBrush)
-                    } else {
-                        Modifier.background(spec.gradientStyle.solidSurface(scheme, spec.cardAlpha))
-                    }
-                )
+        GlassSurfaceLayer(
+            shape = shape,
+            surfaceAlpha = spec.cardAlpha,
+            blurRadius = spec.cardBlurRadius,
+            borderAlpha = spec.borderAlpha,
+            sheenAlpha = spec.sheenAlpha,
+            frosted = frosted,
+            frostPrimary = MaterialTheme.colorScheme.primary,
+            frostSecondary = MaterialTheme.colorScheme.tertiary,
+            bottomHairline = false,
+            modifier = Modifier.matchParentSize()
         )
-        GlassEdges(shape = shape, borderAlpha = spec.borderAlpha, sheenAlpha = spec.sheenAlpha, modifier = Modifier.matchParentSize())
+
+        // Optional tint *between* the glass and the content: how a row shows it is
+        // selected without giving up the gradient underneath (see the onboarding
+        // privilege cards and any list row with an active state).
+        if (overlay != Color.Transparent) {
+            Box(modifier = Modifier.matchParentSize().background(overlay))
+        }
 
         Column(
             modifier = Modifier
@@ -124,6 +119,110 @@ fun GlassCard(
             content = content
         )
     }
+}
+
+/**
+ * Frosted-glass dialog — the app's liquid-glass surface instead of Material's flat
+ * `scheme.surface` dialog background.
+ *
+ * Built on [Dialog] rather than `AlertDialog` deliberately: an AlertDialog paints
+ * its own Surface around the slots, and a dialog is a *separate window*, so a
+ * translucent container there cannot sample the content behind it. The honest way
+ * to get a frosted panel is to draw the layers a [GlassCard] draws — blurred
+ * decoration, translucent gradient tint, hairline border, top sheen — and lay the
+ * familiar dialog slots out inside them. Slot order, spacing and end-aligned
+ * buttons follow Material's dialog metrics, so only the surface changes, not how
+ * these read.
+ *
+ * Blur costs one offscreen layer, and a dialog is a single small surface shown
+ * while nothing is scrolling, so this is exactly the case the frosted layer was
+ * written for; in OLED mode [com.icy.devcheckplus.ui.theme.GlassSpec] reports a 0dp
+ * radius and the panel falls back to a solid tint on its own.
+ */
+@Composable
+fun GlassDialog(
+    onDismissRequest: () -> Unit,
+    title: String,
+    modifier: Modifier = Modifier,
+    /** Override for a title that has to carry a warning (Console's risk prompt). */
+    titleColor: Color? = null,
+    icon: ImageVector? = null,
+    text: (@Composable ColumnScope.() -> Unit)? = null,
+    confirmButton: @Composable RowScope.() -> Unit,
+    dismissButton: (@Composable RowScope.() -> Unit)? = null,
+    properties: DialogProperties = DialogProperties()
+) {
+    val scheme = MaterialTheme.colorScheme
+    Dialog(onDismissRequest = onDismissRequest, properties = properties) {
+        GlassCard(
+            modifier = modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 18.dp)
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = scheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .size(26.dp)
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = titleColor ?: scheme.onSurface
+            )
+            if (text != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                text()
+            }
+            Spacer(modifier = Modifier.height(22.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (dismissButton != null) dismissButton()
+                confirmButton()
+            }
+        }
+    }
+}
+
+/**
+ * Just the glass *layers* — blurred decoration, translucent gradient tint,
+ * hairline border, top sheen — with no content and no padding, for painting a
+ * frosted surface behind something that supplies its own layout: a bottom sheet's
+ * contents, a navigation drawer, an app bar.
+ *
+ * Use it with `Modifier.matchParentSize()` inside a [Box] whose size is decided by
+ * the content it is backing, so the glass never drives layout.
+ */
+@Composable
+fun BoxScope.GlassBackdrop(
+    shape: Shape,
+    modifier: Modifier = Modifier,
+    frosted: Boolean = true,
+    surfaceAlpha: Float = LocalGlassSpec.current.cardAlpha
+) {
+    val spec = LocalGlassSpec.current
+    val scheme = MaterialTheme.colorScheme
+    GlassSurfaceLayer(
+        shape = shape,
+        surfaceAlpha = surfaceAlpha,
+        blurRadius = spec.cardBlurRadius,
+        borderAlpha = spec.borderAlpha,
+        sheenAlpha = spec.sheenAlpha,
+        frosted = frosted,
+        frostPrimary = scheme.primary,
+        frostSecondary = scheme.tertiary,
+        bottomHairline = false,
+        modifier = modifier
+    )
 }
 
 /**
@@ -137,61 +236,128 @@ fun GlassTopBar(
 ) {
     val spec = LocalGlassSpec.current
     val scheme = MaterialTheme.colorScheme
-    // Same rule as cards: no offscreen blur layer while the content below scrolls.
-    val scrolling = LocalScrollActivity.current.value
 
     Box(modifier = modifier.clip(shape)) {
-        FrostedLayer(
+        GlassSurfaceLayer(
             shape = shape,
-            radius = if (scrolling) 0.dp else spec.barBlurRadius,
-            primary = scheme.primary,
-            tertiary = scheme.secondary,
+            surfaceAlpha = spec.barAlpha,
+            blurRadius = spec.barBlurRadius,
+            borderAlpha = spec.borderAlpha,
+            sheenAlpha = 0f,
+            frosted = true,
+            frostPrimary = scheme.primary,
+            frostSecondary = scheme.secondary,
+            bottomHairline = true,
             modifier = Modifier.matchParentSize()
-        )
-        val barBrush = remember(scheme, spec.barAlpha, spec.gradientStyle) {
-            spec.gradientStyle.surfaceBrush(scheme, spec.barAlpha)
-        }
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .then(
-                    if (barBrush != null) {
-                        Modifier.background(barBrush)
-                    } else {
-                        Modifier.background(spec.gradientStyle.solidSurface(scheme, spec.barAlpha))
-                    }
-                )
-        )
-        // Hairline at the bottom edge only.
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.86f to Color.Transparent,
-                        1f to scheme.onSurface.copy(alpha = spec.borderAlpha * 0.45f)
-                    )
-                )
         )
         Column(modifier = Modifier.fillMaxWidth(), content = content)
     }
 }
 
 /**
+ * Everything that *paints* a glass surface: the blurred decoration layer, the
+ * gradient-or-flat body, the hairline edge, the sheen and (for the app bar) the
+ * bottom hairline.
+ *
+ * Split out from [GlassCard] and [GlassTopBar] for one reason: this is the node
+ * that reads [rememberGlassFidelity], so the scroll cross-fade invalidates a
+ * single background box instead of the card body, its content lambda and the
+ * screen around it.
+ *
+ * Fidelity rules, in the order they cost something:
+ *  - `0f` (fling in progress): one flat `scheme.surface` colour. No gradient
+ *    shader, no blur layer, no sheen — the cheapest possible surface, and
+ *    [surfaceBrush] returns `null` so not even a degenerate brush is built;
+ *  - `0f → 1f` (list settling): every gradient stop is lerped from the flat
+ *    colour back to its real one over ~320 ms, so the glass fades in instead of
+ *    popping. The blur radius is *not* animated with it — re-creating a
+ *    RenderEffect per frame is far more expensive than the fade is worth — so
+ *    blur is simply requested once settled and its own colours ride the fade;
+ *  - `1f` (at rest): the full liquid-glass treatment.
+ */
+@Composable
+private fun BoxScope.GlassSurfaceLayer(
+    shape: Shape,
+    surfaceAlpha: Float,
+    blurRadius: Dp,
+    borderAlpha: Float,
+    sheenAlpha: Float,
+    frosted: Boolean,
+    frostPrimary: Color,
+    frostSecondary: Color,
+    bottomHairline: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val spec = LocalGlassSpec.current
+    val scheme = MaterialTheme.colorScheme
+    val scrolling = LocalScrollActivity.current.value
+    val fidelity = rememberGlassFidelity()
+
+    if (frosted && !scrolling && fidelity > 0.01f) {
+        FrostedLayer(
+            shape = shape,
+            radius = blurRadius,
+            fidelity = fidelity,
+            primary = frostPrimary,
+            secondary = frostSecondary,
+            modifier = modifier
+        )
+    }
+
+    // Semi-transparent surface tint (the "glass" body), painted with the user's
+    // gradient style at the current fidelity — Solid, and a flattened surface,
+    // paint a flat colour instead.
+    val surfaceBrush = remember(spec.gradientStyle, scheme, surfaceAlpha, fidelity) {
+        spec.gradientStyle.surfaceBrush(scheme, surfaceAlpha, fidelity, spec.customGradient)
+    }
+    Box(
+        modifier = modifier
+            .then(
+                if (surfaceBrush != null) {
+                    Modifier.background(surfaceBrush)
+                } else {
+                    Modifier.background(spec.gradientStyle.solidSurface(scheme, surfaceAlpha))
+                }
+            )
+    )
+
+    GlassEdges(
+        shape = shape,
+        borderAlpha = borderAlpha,
+        sheenAlpha = sheenAlpha * fidelity,
+        modifier = modifier
+    )
+
+    if (bottomHairline) {
+        Box(
+            modifier = modifier.background(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    0.86f to Color.Transparent,
+                    1f to scheme.onSurface.copy(alpha = borderAlpha * 0.45f * fidelity)
+                )
+            )
+        )
+    }
+}
+
+/**
  * Blurred decorative layer. Below API 31 [Modifier.blur] cannot run on a
  * hardware canvas, so the whole layer is skipped and the solid tint above acts
- * as the fallback.
+ * as the fallback. [fidelity] scales the two tints, which is what makes the frost
+ * fade in with the gradient instead of appearing in one frame.
  */
 @Composable
 private fun FrostedLayer(
     shape: Shape,
     radius: Dp,
+    fidelity: Float,
     primary: Color,
-    tertiary: Color,
+    secondary: Color,
     modifier: Modifier = Modifier
 ) {
     if (radius <= 0.dp) return
+    if (fidelity <= 0.01f) return
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
 
     Box(
@@ -203,9 +369,9 @@ private fun FrostedLayer(
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            primary.copy(alpha = 0.20f),
+                            primary.copy(alpha = 0.20f * fidelity),
                             Color.Transparent,
-                            tertiary.copy(alpha = 0.14f)
+                            secondary.copy(alpha = 0.14f * fidelity)
                         ),
                         start = Offset.Zero,
                         end = Offset.Infinite
@@ -297,6 +463,96 @@ fun GlassSectionHeader(
                 overflow = TextOverflow.Ellipsis
             )
         }
+    }
+}
+
+/**
+ * A whole *group* of rows in one glass box: header, hairline, content.
+ *
+ * Grouped-settings structure (the layout a system settings screen uses: a labelled
+ * box per category) rendered in this app's own liquid-glass skin. The header sits
+ * **inside** the bordered/gradient container rather than floating above it as bare
+ * text, so a category reads as one object — the same visual language as the rows
+ * inside it, which are no longer cards of their own.
+ *
+ * Everything expensive is inherited from [GlassCard], so a group box flattens its
+ * gradient, drops its blur and its shadow while the list is being flung and fades
+ * back once it settles.
+ */
+@Composable
+fun GlassGroupBox(
+    title: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    supporting: String? = null,
+    shape: Shape = RoundedCornerShape(24.dp),
+    contentPadding: PaddingValues = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val spec = LocalGlassSpec.current
+
+    GlassCard(
+        modifier = modifier,
+        shape = shape,
+        contentPadding = contentPadding,
+        frosted = true
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 2.dp, end = 2.dp, top = 10.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (icon != null) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(scheme.primary.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = scheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = scheme.primary,
+                letterSpacing = 0.9.sp,
+                modifier = Modifier.weight(1f)
+            )
+            if (supporting != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        // Hairline that ties the header to the rows below it without adding a
+        // second surface: same tint and thickness the rows already use internally.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.8.dp)
+                .background(scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f))
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        content()
     }
 }
 

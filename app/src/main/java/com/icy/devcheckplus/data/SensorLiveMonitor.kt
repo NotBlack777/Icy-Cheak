@@ -27,10 +27,25 @@ import kotlinx.coroutines.flow.StateFlow
  *    second no matter how many sensors report;
  *  - history is a capped ring buffer, so memory stays flat.
  */
+/**
+ * @param publishIntervalMs how often buffered readings reach the UI. Driven by the
+ *        global refresh rate (Settings › Advanced › Refresh rate), so the sensor
+ *        screen is no longer pinned to its own hardwired 500 ms cadence.
+ */
 class SensorLiveMonitor(
     context: Context,
     private val publishIntervalMs: Long = 500L
 ) : SensorEventListener {
+
+    /**
+     * Hardware sampling rate requested from [SensorManager]. The publish throttle
+     * above is what the UI actually sees, so asking for the fastest hardware rate
+     * at a slow refresh rate would only burn power: Real-time uses
+     * [SensorManager.SENSOR_DELAY_UI] (~60 ms), everything else stays at
+     * [SensorManager.SENSOR_DELAY_NORMAL] (~200 ms).
+     */
+    private val sensorDelay: Int =
+        if (publishIntervalMs <= 300L) SensorManager.SENSOR_DELAY_UI else SensorManager.SENSOR_DELAY_NORMAL
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val monitoredTypes = listOf(
@@ -86,7 +101,7 @@ class SensorLiveMonitor(
         for (type in monitoredTypes) {
             val sensor = sensorManager.getDefaultSensor(type)
             if (sensor != null) {
-                sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL, handler)
+                sensorManager.registerListener(this, sensor, sensorDelay, handler)
             }
         }
     }
