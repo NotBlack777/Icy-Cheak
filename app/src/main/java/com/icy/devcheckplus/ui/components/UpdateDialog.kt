@@ -214,7 +214,7 @@ private fun DownloadSection(
  */
 @Composable
 fun UpdateStatusLine(checkState: UpdateCheckState, modifier: Modifier = Modifier) {
-    val text: String? = when (checkState) {
+    val text: String = when (checkState) {
         UpdateCheckState.Idle -> null
         UpdateCheckState.Checking -> "Checking GitHub Releases…"
         is UpdateCheckState.Available -> "Update available: v${checkState.info.versionName}"

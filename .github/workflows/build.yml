@@ -48,31 +48,109 @@ jobs:
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "resolved versionName=$VERSION_NAME (versionCode $((GITHUB_RUN_NUMBER + 1)))"
 
+      # Deliberately NOT piped into `tee`: `gradle ... | tee log` reports tee's exit
+      # status (0) when the shell has no `pipefail`, which silently turns a failed
+      # build into a green step. Redirecting to the file keeps Gradle's real status,
+      # and the tail is printed so the failing lines are always in the step output.
       - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+        id: assemble
+        shell: bash
+        run: |
+          set +e
+          ./gradlew assembleDebug --stacktrace > build.log 2>&1
+          status=$?
+          tail -n 120 build.log
+          exit $status
 
+      # Failures are surfaced as check-run annotations, because the raw Gradle log is
+      # not downloadable from every environment (the log host is unreachable from
+      # some sandboxes). One annotation carries everything, so it is readable through
+      # GET /repos/{owner}/{repo}/check-runs/{id}/annotations.
       - name: Publish compiler errors
         if: failure()
+        shell: bash
         run: |
-          if grep -qE "^e: " build.log; then
-            grep -E "^e: " build.log | head -80 | while IFS= read -r line; do
-              echo "::error title=Kotlin::$line"
-            done
-          else
-            tail -n 30 build.log | while IFS= read -r line; do
-              echo "::error title=Gradle::$line"
-            done
+          if [ ! -f build.log ]; then
+            echo "::error title=Gradle::build.log is missing — Gradle never started."
+            exit 0
           fi
 
-      - name: Rename APK for release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+          if grep -qE "^e: " build.log; then
+            COUNT=$(grep -cE "^e: " build.log)
+            grep -E "^e: " build.log | sed 's#file:///home/runner/work/Icy-Cheak/Icy-Cheak/##' > errors.txt
+            echo "::error title=Build failed::${COUNT} Kotlin error lines — full list in the annotations below and in the build-log artifact."
+          else
+            tail -n 200 build.log > errors.txt
+            echo "::error title=Build failed::Gradle failed before Kotlin compilation — see the output tail in the annotations below."
+          fi
+
+          # A single annotation message is capped at 4096 characters, so the error
+          # list is emitted in chunks instead of being silently truncated.
+          CHUNK=""
+          while IFS= read -r line; do
+            if [ $(( ${#CHUNK} + ${#line} )) -gt 3000 ]; then
+              echo "::error title=Build errors::${CHUNK}"
+              CHUNK=""
+            fi
+            CHUNK="${CHUNK}${line}|"
+          done < errors.txt
+          if [ -n "$CHUNK" ]; then
+            echo "::error title=Build errors::${CHUNK}"
+          fi
+
+      # The raw log is the ground truth; keep it attached to the run so it can be
+      # fetched later even after the annotations have been read.
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: IcyCheak-build-log
+          path: |
+            build.log
+            errors.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Independent verification that the build actually produced an installable APK.
+      # Without this, an empty `app/build/outputs` still yielded a green run.
+      - name: Verify APK
         id: apk
+        shell: bash
         run: |
-          SRC=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
-          DEST="app/build/outputs/apk/debug/IcyCheak-${{ steps.version.outputs.version_name }}.apk"
-          cp "$SRC" "$DEST"
-          echo "apk_path=$DEST" >> "$GITHUB_OUTPUT"
-          echo "apk_name=IcyCheak-${{ steps.version.outputs.version_name }}.apk" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          APK=$(find app/build/outputs -type f -name '*.apk' -print -quit || true)
+          if [ -z "$APK" ]; then
+            echo "::error title=APK::No APK was produced, so the build never reached packaging."
+            find app/build -maxdepth 3 -type d 2>/dev/null | head -20 || true
+            exit 1
+          fi
+          SIZE=$(stat -c %s "$APK")
+          echo "::notice title=APK built::$APK ($SIZE bytes)"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$APK")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IcyCheak-Debug-APK
+          # Recursive on purpose: the exact variant subdirectory is not assumed, and
+          # `error` means an empty match fails the run instead of warning quietly.
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prepare release asset
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version_name }}"
+          OUT_DIR=$(dirname "${{ steps.apk.outputs.path }}")
+          DEST="$OUT_DIR/IcyCheak-$VERSION.apk"
+          cp "${{ steps.apk.outputs.path }}" "$DEST"
+          echo "release_asset=$DEST" >> "$GITHUB_ENV"
+          echo "release_asset_name=IcyCheak-$VERSION.apk" >> "$GITHUB_ENV"
+          echo "::notice title=Release asset::$(basename "$DEST") in $OUT_DIR"
 
       # Publishes (or updates) the release the in-app updater reads from
       # https://api.github.com/repos/NotBlack777/Icy-Cheak/releases/latest.
@@ -87,20 +165,13 @@ jobs:
           body: |
             Automated build of `Icy Cheak` from `main` (${{ github.sha }}).
 
-            **Install:** download `${{ steps.apk.outputs.apk_name }}` below and open it on your
+            **Install:** download `${{ env.release_asset_name }}` below and open it on your
             device. Android will ask you to allow installing unknown apps — that is the normal
             platform confirmation for any app installed outside a store.
 
             **In-app updates:** open Settings › Updates › *Check for updates*, or wait for the
             automatic check on launch.
-          files: ${{ steps.apk.outputs.apk_path }}
+          files: ${{ env.release_asset }}
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
-
-      - name: Upload Debug APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: IcyCheak-Debug-APK
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 14

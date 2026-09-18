@@ -4,7 +4,6 @@ import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
@@ -29,7 +28,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
  *  - only the composables that read the flag (the frosted layer, the ambient
  *    background) recompose when it flips — the screen around them does not.
  */
-val LocalScrollActivity: MutableState<Boolean> = staticCompositionLocalOf { mutableStateOf(false) }
+val LocalScrollActivity = staticCompositionLocalOf { mutableStateOf(false) }
 
 /** Provides a fresh scroll-activity flag to everything below it. */
 @Composable
