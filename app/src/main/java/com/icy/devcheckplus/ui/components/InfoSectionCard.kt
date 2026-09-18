@@ -60,6 +60,7 @@ fun InfoSectionCard(
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
     val spec = LocalGlassSpec.current
+    val tick = rememberHapticTick()
 
     GlassCard(
         modifier = modifier.padding(horizontal = 16.dp, vertical = 5.dp),
@@ -71,7 +72,7 @@ fun InfoSectionCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .clickable { expanded = !expanded }
+                .clickable { tick(); expanded = !expanded }
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween

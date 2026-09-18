@@ -31,10 +31,10 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -62,6 +62,7 @@ import com.icy.devcheckplus.ui.components.AmbientBackground
 import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassRow
+import com.icy.devcheckplus.ui.components.HapticSwitch
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.SelectableTile
 import com.icy.devcheckplus.ui.components.ThemeModePreview
@@ -91,6 +92,7 @@ fun SettingsScreen(
     val privilegeStatus by PrivilegeManager.status.collectAsState()
     val themeMode by AppSettingsStore.themeMode.collectAsState()
     val dynamicColor by AppSettingsStore.dynamicColor.collectAsState()
+    val hapticFeedback by AppSettingsStore.hapticFeedback.collectAsState()
     val publicIpLookup by AppSettingsStore.publicIpLookup.collectAsState()
     var showExportDialog by remember { mutableStateOf(false) }
 
@@ -123,8 +125,10 @@ fun SettingsScreen(
                 ThemeCard(
                     themeMode = themeMode,
                     dynamicColor = dynamicColor,
+                    hapticFeedback = hapticFeedback,
                     onThemeModeChange = { AppSettingsStore.setThemeMode(context, it) },
-                    onDynamicColorChange = { AppSettingsStore.setDynamicColor(context, it) }
+                    onDynamicColorChange = { AppSettingsStore.setDynamicColor(context, it) },
+                    onHapticFeedbackChange = { AppSettingsStore.setHapticFeedback(context, it) }
                 )
             }
 
@@ -267,8 +271,10 @@ private fun StatusPill(status: PrivilegeStatus) {
 private fun ThemeCard(
     themeMode: ThemeMode,
     dynamicColor: Boolean,
+    hapticFeedback: Boolean,
     onThemeModeChange: (ThemeMode) -> Unit,
-    onDynamicColorChange: (Boolean) -> Unit
+    onDynamicColorChange: (Boolean) -> Unit,
+    onHapticFeedbackChange: (Boolean) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
@@ -320,7 +326,22 @@ private fun ThemeCard(
                 "Wallpaper colours need Android 12+ — the built-in cyan palette is used."
             },
             trailing = {
-                Switch(checked = dynamicColor, onCheckedChange = onDynamicColorChange)
+                HapticSwitch(checked = dynamicColor, onCheckedChange = onDynamicColorChange)
+            }
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 6.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+
+        GlassRow(
+            title = "Haptic feedback",
+            icon = Icons.Default.Vibration,
+            subtitle = "A light tick on toggles, tile selections and pin stars.",
+            trailing = {
+                HapticSwitch(checked = hapticFeedback, onCheckedChange = onHapticFeedbackChange)
             }
         )
     }
@@ -455,7 +476,7 @@ private fun PrivacyCard(
             icon = Icons.Default.Public,
             subtitle = "Sends a lightweight request to api.ipify.org to show your external IPv4 in the Network tab.",
             trailing = {
-                Switch(checked = publicIpLookup, onCheckedChange = onPublicIpChange)
+                HapticSwitch(checked = publicIpLookup, onCheckedChange = onPublicIpChange)
             }
         )
 

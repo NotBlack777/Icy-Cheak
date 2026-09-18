@@ -1,5 +1,6 @@
 package com.icy.devcheckplus
 
+import com.icy.devcheckplus.ui.components.rememberHapticTick
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -136,6 +137,7 @@ fun MainDashboardScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val searchHistory by AppSettingsStore.searchHistory.collectAsState()
+    val hapticTick = rememberHapticTick()
 
     // Remember what the user actually searched for: only the term that survives
     // 1.2 s of idle typing is stored, so intermediate keystrokes are skipped.
@@ -196,6 +198,7 @@ fun MainDashboardScreen(
                         },
                         selected = isSelected,
                         onClick = {
+                            hapticTick()
                             currentCategory = category
                             scope.launch { drawerState.close() }
                         },

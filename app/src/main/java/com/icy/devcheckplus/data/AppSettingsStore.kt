@@ -24,6 +24,7 @@ object AppSettingsStore {
     const val KEY_CONSOLE_WARNING_ACK = "pref_console_warning_ack"
     const val KEY_CONSOLE_HISTORY = "pref_console_history"
     const val KEY_SEARCH_HISTORY = "pref_search_history"
+    const val KEY_HAPTIC_FEEDBACK = "pref_haptic_feedback"
 
     /** Maximum number of remembered console commands. */
     private const val MAX_CONSOLE_HISTORY = 20
@@ -58,6 +59,9 @@ object AppSettingsStore {
     private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
     val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
+    private val _hapticFeedback = MutableStateFlow(true)
+    val hapticFeedback: StateFlow<Boolean> = _hapticFeedback.asStateFlow()
+
     @Volatile
     private var initialized = false
 
@@ -73,6 +77,7 @@ object AppSettingsStore {
         _consoleWarningAck.value = p.getBoolean(KEY_CONSOLE_WARNING_ACK, false)
         _consoleHistory.value = decodeHistory(p.getString(KEY_CONSOLE_HISTORY, null))
         _searchHistory.value = decodeSearchHistory(p.getString(KEY_SEARCH_HISTORY, null))
+        _hapticFeedback.value = p.getBoolean(KEY_HAPTIC_FEEDBACK, true)
         initialized = true
     }
 
@@ -126,6 +131,11 @@ object AppSettingsStore {
         if (updated == _searchHistory.value) return
         _searchHistory.value = updated
         prefs(context).edit().putString(KEY_SEARCH_HISTORY, updated.joinToString(SEARCH_SEPARATOR)).apply()
+    }
+
+    fun setHapticFeedback(context: Context, enabled: Boolean) {
+        _hapticFeedback.value = enabled
+        prefs(context).edit().putBoolean(KEY_HAPTIC_FEEDBACK, enabled).apply()
     }
 
     fun clearSearchHistory(context: Context) {

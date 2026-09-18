@@ -291,13 +291,14 @@ fun GlassRow(
 ) {
     val scheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(14.dp)
+    val rowTick = rememberHapticTick()
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
             .then(
                 if (onClick != null) {
-                    Modifier.clickable(enabled = enabled, onClick = onClick)
+                    Modifier.clickable(enabled = enabled, onClick = { rowTick(); onClick() })
                 } else {
                     Modifier
                 }

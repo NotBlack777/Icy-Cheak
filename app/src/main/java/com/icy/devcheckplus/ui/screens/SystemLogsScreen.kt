@@ -1,5 +1,6 @@
 package com.icy.devcheckplus.ui.screens
 
+import com.icy.devcheckplus.ui.components.rememberHapticTick
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -127,6 +128,8 @@ fun SystemLogsScreen(
             }
         }
 
+        val tick = rememberHapticTick()
+
         // Level Filters
         Row(
             modifier = Modifier
@@ -137,7 +140,7 @@ fun SystemLogsScreen(
             listOf("ALL", "V", "D", "I", "W", "E").forEach { lvl ->
                 FilterChip(
                     selected = selectedLevel == lvl,
-                    onClick = { selectedLevel = lvl },
+                    onClick = { tick(); selectedLevel = lvl },
                     label = { Text(lvl, fontSize = 11.sp) }
                 )
             }

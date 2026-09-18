@@ -1,5 +1,6 @@
 package com.icy.devcheckplus.ui.screens
 
+import com.icy.devcheckplus.ui.components.rememberHapticTick
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -111,6 +112,7 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
     val privilegeStatus by PrivilegeManager.status.collectAsState()
     val warningAcked by AppSettingsStore.consoleWarningAck.collectAsState()
     val history by AppSettingsStore.consoleHistory.collectAsState()
+    val tick = rememberHapticTick()
 
     var command by remember { mutableStateOf("") }
     var lines by remember { mutableStateOf(listOf<ConsoleLine>()) }
@@ -373,7 +375,7 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
             quickCommands.forEach { quick ->
                 FilterChip(
                     selected = false,
-                    onClick = { command = quick },
+                    onClick = { tick(); command = quick },
                     label = {
                         Text(
                             text = quick,
@@ -397,7 +399,7 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
                 history.forEach { previous ->
                     FilterChip(
                         selected = previous == command,
-                        onClick = { command = previous },
+                        onClick = { tick(); command = previous },
                         label = {
                             Text(
                                 text = previous,

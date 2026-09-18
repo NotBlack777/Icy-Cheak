@@ -43,11 +43,15 @@ fun PinToggleButton(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pinnedKeys = rememberPinnedKeys()
+    val tick = rememberHapticTick()
     val encoded = remember(pin) { pin.encode() }
     val pinned = encoded in pinnedKeys
 
     IconButton(
-        onClick = { scope.launch { PinnedItemsStore.toggle(context, pin) } },
+        onClick = {
+            tick()
+            scope.launch { PinnedItemsStore.toggle(context, pin) }
+        },
         modifier = modifier.size(32.dp)
     ) {
         Icon(

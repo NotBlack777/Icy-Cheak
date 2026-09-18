@@ -39,6 +39,7 @@ fun SearchSuggestionRow(
 ) {
     if (suggestions.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
+    val tick = rememberHapticTick()
 
     Row(
         modifier = modifier
@@ -62,7 +63,10 @@ fun SearchSuggestionRow(
             items(suggestions) { term ->
                 FilterChip(
                     selected = false,
-                    onClick = { onSuggestionClick(term) },
+                    onClick = {
+                        tick()
+                        onSuggestionClick(term)
+                    },
                     label = {
                         Text(
                             text = term,

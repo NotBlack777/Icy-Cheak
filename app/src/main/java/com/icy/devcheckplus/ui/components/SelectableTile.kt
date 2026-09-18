@@ -83,6 +83,7 @@ fun SelectableTile(
 ) {
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
+    val tileTick = rememberHapticTick()
 
     val borderColor by animateColorAsState(
         targetValue = when {
@@ -142,7 +143,7 @@ fun SelectableTile(
                 )
             )
             .border(width = borderWidth, color = borderColor, shape = shape)
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = enabled, onClick = { tileTick(); onClick() })
             .semantics(mergeDescendants = true) {
                 role = Role.RadioButton
                 this.selected = selectedValue
