@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
@@ -49,6 +51,7 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
@@ -74,6 +77,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.BuildConfig
 import com.icy.devcheckplus.data.AccentPalette
+import com.icy.devcheckplus.data.AppManagementController
 import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.data.BackgroundAnimation
 import com.icy.devcheckplus.data.CustomGradient
@@ -84,11 +88,15 @@ import com.icy.devcheckplus.data.SettingsSectionId
 import com.icy.devcheckplus.data.UpdateCheckState
 import com.icy.devcheckplus.data.UpdateChecker
 import com.icy.devcheckplus.data.UpdateRepository
+import com.icy.devcheckplus.data.UpdateViewModel
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import com.icy.devcheckplus.privilege.PrivilegeStatus
 import com.icy.devcheckplus.ui.components.AccentGrid
+import com.icy.devcheckplus.ui.components.AppActionConfirmationDialog
+import com.icy.devcheckplus.ui.components.AppActionFailureDialog
+import com.icy.devcheckplus.ui.components.AppManagementAction
 import com.icy.devcheckplus.ui.components.CustomGradientSheet
 import com.icy.devcheckplus.ui.components.BackgroundAnimationGrid
 import com.icy.devcheckplus.ui.components.ExportFormatSheet
@@ -109,6 +117,7 @@ import com.icy.devcheckplus.ui.components.TileGrid
 import com.icy.devcheckplus.ui.components.TileIconPreview
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.displayIcon
+import com.icy.devcheckplus.ui.components.UpdatePendingDot
 import com.icy.devcheckplus.ui.components.UpdateStatusLine
 import com.icy.devcheckplus.ui.components.WatchdogSheet
 import com.icy.devcheckplus.ui.components.rememberHapticTick
@@ -963,9 +972,15 @@ private fun ColumnScope.UpdatesSection() {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
-    val checkState by UpdateRepository.checkState.collectAsStateWithLifecycle()
+    val updateViewModel: UpdateViewModel = androidx.lifecycle.viewmodel.compose.viewModel(factory = UpdateViewModel.Factory)
+    val checkState by updateViewModel.checkState.collectAsStateWithLifecycle()
+    val dialogDismissed by updateViewModel.dialogDismissed.collectAsStateWithLifecycle()
     val autoCheck by UserPreferencesStore.autoUpdateCheck
         .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.autoUpdateCheck.value)
+
+    // Update available but dismissed this session: show a re-open row + badge.
+    val available = checkState as? UpdateCheckState.Available
+    val updatePending = available != null && dialogDismissed
 
     GlassRow(
         title = "Check for updates",
@@ -974,14 +989,42 @@ private fun ColumnScope.UpdatesSection() {
             "Currently on v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}).",
         onClick = { UpdateRepository.check(context) },
         trailing = {
-            PillAction(
-                text = if (checkState is UpdateCheckState.Checking) "Checking…" else "Check now",
-                onClick = { UpdateRepository.check(context) },
-                contentDescription = "Check GitHub Releases for a newer build",
-                enabled = checkState !is UpdateCheckState.Checking
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PillAction(
+                    text = if (checkState is UpdateCheckState.Checking) "Checking…" else "Check now",
+                    onClick = { UpdateRepository.check(context) },
+                    contentDescription = "Check GitHub Releases for a newer build",
+                    enabled = checkState !is UpdateCheckState.Checking
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                UpdatePendingDot(
+                    viewModel = updateViewModel,
+                    modifier = Modifier.size(9.dp)
+                )
+            }
         }
     )
+
+    // The re-open affordance: dismissing the dialog with "Later" must not be a
+    // dead end. This row appears while an update is available-but-dismissed and,
+    // unlike "Check now", does not hit the network again — it just re-shows the
+    // dialog the ViewModel is already holding.
+    if (updatePending) {
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 6.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+        GlassRow(
+            title = "Update available — v${available?.info?.versionName}",
+            icon = Icons.Default.SystemUpdate,
+            subtitle = "You dismissed this earlier. Open the update prompt again without checking the network.",
+            onClick = { updateViewModel.showDialog() },
+            trailing = {
+                UpdatePendingDot(viewModel = updateViewModel, modifier = Modifier.size(9.dp))
+            }
+        )
+    }
 
     UpdateStatusLine(
         checkState = checkState,
@@ -1275,6 +1318,103 @@ private fun ColumnScope.AdvancedSection(
         },
         iconTint = scheme.tertiary
     )
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    SelfManagementSection()
+}
+
+/**
+ * Quick access to DevCheck+'s own management actions (Settings › Advanced).
+ *
+ * Convenience copies of the per-app actions in Installed Apps, so a user can
+ * restart or remove the app without hunting through the package list. They share
+ * the exact same confirmation/warning behaviour: force-stop narrates that the
+ * app closes immediately, and self-uninstall demands an extra-explicit step.
+ */
+@Composable
+private fun SelfManagementSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val scheme = MaterialTheme.colorScheme
+    val appName = remember(context) {
+        runCatching { context.applicationInfo.loadLabel(context.packageManager).toString() }
+            .getOrDefault(context.packageName)
+    }
+
+    var pendingAction by remember { mutableStateOf<AppManagementAction?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var failureMessage by remember { mutableStateOf<String?>(null) }
+
+    fun perform(action: AppManagementAction) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            val result = when (action) {
+                AppManagementAction.FORCE_STOP -> AppManagementController.forceStop(context, context.packageName)
+                AppManagementAction.UNINSTALL -> AppManagementController.uninstall(context, context.packageName)
+            }
+            busy = false
+            if (result is AppManagementController.AppActionResult.Failure) {
+                failureMessage = result.message
+            }
+        }
+    }
+
+    GlassRow(
+        title = "Force stop $appName",
+        icon = Icons.Default.StopCircle,
+        iconTint = scheme.tertiary,
+        subtitle = if (busy) "Working…" else "Closes the app immediately — handy after changing a theme or engine.",
+        enabled = !busy,
+        onClick = { pendingAction = AppManagementAction.FORCE_STOP },
+        trailing = {
+            if (busy) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = scheme.primary)
+            }
+        }
+    )
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = LocalGlassSpec.current.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    GlassRow(
+        title = "Uninstall $appName",
+        icon = Icons.Outlined.DeleteOutline,
+        iconTint = scheme.error,
+        subtitle = "Removes the app from this device. This cannot be undone.",
+        enabled = !busy,
+        onClick = { pendingAction = AppManagementAction.UNINSTALL }
+    )
+
+    val action = pendingAction
+    if (action != null) {
+        AppActionConfirmationDialog(
+            action = action,
+            appName = appName,
+            packageName = context.packageName,
+            isSystemApp = false,
+            isSelf = true,
+            selfName = appName,
+            onConfirm = {
+                pendingAction = null
+                perform(action)
+            },
+            onDismiss = { pendingAction = null }
+        )
+    }
+
+    val failure = failureMessage
+    if (failure != null) {
+        AppActionFailureDialog(message = failure, onDismiss = { failureMessage = null })
+    }
 }
 
 @Composable
@@ -1312,7 +1452,7 @@ private fun ColumnScope.ExportSection(onExport: () -> Unit, onSectionsClick: () 
         icon = Icons.Default.Info,
         subtitle = if (allIncluded) {
             "Hardware • Software • Battery • Storage • Network • Processes • Installed apps • " +
-                "Sensors • live telemetry. Tap to choose."
+                "Sensors • Dev Environment • live telemetry. Tap to choose."
         } else {
             sections.sortedBy { it.ordinal }.joinToString(" • ") { it.label } +
                 ". Tap to choose."

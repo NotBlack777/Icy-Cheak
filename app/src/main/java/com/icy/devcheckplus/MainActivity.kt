@@ -7,6 +7,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -89,6 +91,7 @@ import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.screens.BatteryScreen
 import com.icy.devcheckplus.ui.screens.ConsoleScreen
 import com.icy.devcheckplus.ui.screens.DashboardScreen
+import com.icy.devcheckplus.ui.screens.DevEnvironmentScreen
 import com.icy.devcheckplus.ui.screens.HardwareScreen
 import com.icy.devcheckplus.ui.screens.InstalledAppsScreen
 import com.icy.devcheckplus.ui.screens.NetworkScreen
@@ -372,7 +375,17 @@ fun MainDashboardScreen(
                 AnimatedContent(
                     targetState = currentCategory,
                     transitionSpec = {
-                        fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(200))
+                        // Fade + directional slide in the direction of travel (by
+                        // enum ordinal), a soft shared-axis feel instead of an
+                        // abrupt cut. Directionality comes from the enum order, so
+                        // every category — new ones included — slides the same way.
+                        val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                        (fadeIn(animationSpec = tween(220)) +
+                            slideInHorizontally(animationSpec = tween(260)) { width -> direction * width / 12 })
+                            .togetherWith(
+                                fadeOut(animationSpec = tween(160)) +
+                                    slideOutHorizontally(animationSpec = tween(200)) { width -> -direction * width / 12 }
+                            )
                     },
                     label = "CategoryTransition"
                 ) { category ->
@@ -397,6 +410,11 @@ fun MainDashboardScreen(
                             NavCategory.LOGS -> SystemLogsScreen(searchQuery = query, locateToken = locate)
                             NavCategory.SENSORS -> SensorsScreen(searchQuery = query, locateToken = locate)
                             NavCategory.CONSOLE -> ConsoleScreen()
+                            NavCategory.DEV_ENVIRONMENT -> DevEnvironmentScreen(
+                                searchQuery = query,
+                                locateToken = locate,
+                                onOpenSettings = { currentCategory = NavCategory.SETTINGS }
+                            )
                             NavCategory.SETTINGS -> SettingsScreen(onResetOnboarding = onResetOnboarding)
                         }
                     }

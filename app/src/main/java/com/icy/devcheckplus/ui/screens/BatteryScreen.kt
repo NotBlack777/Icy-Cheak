@@ -48,6 +48,8 @@ import com.icy.devcheckplus.ui.components.rememberLiveMetricsSnapshot
 import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 
@@ -60,11 +62,13 @@ fun BatteryScreen(
     val context = LocalContext.current
     var sections by remember { mutableStateOf<List<InfoSection>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var scannedAt by remember { mutableStateOf<String?>(null) }
 
     // One-shot deep read (cycle count / charge_full need privileged shells, so it
     // is deliberately not put on a polling loop). The charts below are live.
     LaunchedEffect(Unit) {
         sections = BatteryDataProvider.getBatterySections(context)
+        scannedAt = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         loading = false
     }
 
@@ -123,7 +127,11 @@ fun BatteryScreen(
                         DrainRateChart()
                     }
                     item(key = "battery_details_header") {
-                        GlassSectionHeader(title = "DETAILS", icon = Icons.Default.BatteryChargingFull)
+                        GlassSectionHeader(
+                            title = "DETAILS",
+                            icon = Icons.Default.BatteryChargingFull,
+                            supporting = scannedAt?.let { "scanned $it" }
+                        )
                     }
                 }
                 items(filteredSections, key = { it.title }) { sec ->

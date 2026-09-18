@@ -52,6 +52,7 @@
    - Complete package list filterable by **All**, **User Apps**, and **System Apps**.
    - Package name, version name, version code, and APK file size.
    - Install time, last update time, and requested Android permissions.
+   - Per-app management: **Force stop** and **Uninstall** via root/Shizuku (or the standard Android flow).
 
 8. **System Logs (Logcat)**
    - Live system logcat viewer (requires Root or Shizuku on Android 6+).
@@ -62,10 +63,15 @@
    - Real-time readout of all available hardware sensors (accelerometer, gyroscope, light, proximity, barometer, etc.).
    - Live canvas graphing of real-time sensor measurements.
 
-10. **Settings & Privilege Engine**
+10. **Dev Environment**
+    - One-shot detector for development tools reachable from the device shell (Node.js, npm, Python, pip, Git, Java, Ruby, Go, Rust, PHP, Docker, Termux).
+    - Shows installed version and path per tool, with a manual Rescan — never a background poll.
+
+11. **Settings & Privilege Engine**
     - Dynamic privilege switcher: **Auto**, **Root Superuser**, **Shizuku**, or **Standard Mode**.
     - Relaunch onboarding setup at any time.
     - Toggle public IP lookup.
+    - Check for updates, with a re-showable update dialog and a persistent "update available" badge.
 
 ---
 

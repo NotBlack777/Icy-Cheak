@@ -11,6 +11,8 @@ import com.icy.devcheckplus.BuildConfig
 import com.icy.devcheckplus.model.InfoItem
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.privilege.PrivilegeMode
+import com.icy.devcheckplus.privilege.UNAVAILABLE_NEEDS_PRIVILEGE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -156,6 +158,9 @@ object DeviceReport {
         val sensors = if (ReportSection.SENSORS in wanted) {
             async { guarded(context, "Sensors") { sensorSections(it) } }
         } else null
+        val devEnvironment = if (ReportSection.DEV_ENVIRONMENT in wanted) {
+            async { guarded(context, "Dev environment") { devEnvironmentSections(it) } }
+        } else null
 
         val now = Date()
         val zone = TimeZone.getDefault()
@@ -172,6 +177,7 @@ object DeviceReport {
             processes?.let { add(ReportCategory("PROCESSES", it.await())) }
             apps?.let { add(ReportCategory("INSTALLED APPS", it.await())) }
             sensors?.let { add(ReportCategory("SENSORS", it.await())) }
+            devEnvironment?.let { add(ReportCategory("DEV ENVIRONMENT", it.await())) }
         }
 
         ReportModel(
@@ -313,6 +319,37 @@ object DeviceReport {
                     InfoItem("Sampling rate", "SENSOR_DELAY_NORMAL (~200 ms)")
                 )
             )
+        )
+    }
+
+    /**
+     * Development-tool inventory, re-scanned (never cached) at export time so the
+     * report reflects the state of the shell right now. Each tool's gateway row
+     * reuses the shared privilege constants: in Standard mode — or when a probe's
+     * watchdog fired — the version falls back to "Unavailable …", matching how
+     * every other elevated reading degrades in a report.
+     */
+    private suspend fun devEnvironmentSections(context: Context): List<InfoSection> {
+        val status = PrivilegeManager.status.value
+        val elevated = status.activeMode == PrivilegeMode.ROOT || status.activeMode == PrivilegeMode.SHIZUKU
+        if (!elevated) return unavailable("Dev environment", UNAVAILABLE_NEEDS_PRIVILEGE)
+
+        // Each probe is individually watchdog-protected by
+        // DevEnvironmentDataProvider, so this bounded read cannot hang the export.
+        val results = DevEnvironmentDataProvider.scanTools()
+        val detected = results.filter { it.installed }
+        val infoItems = results.map { result ->
+            result.toInfoItem(termuxNote = "requires root or Shizuku to read Termux binaries")
+        }
+        return listOf(
+            InfoSection(
+                title = "Development tools (${detected.size} of ${results.size} detected)",
+                items = listOf(
+                    InfoItem("Detected", detected.joinToString(", ") { it.tool.label }.ifBlank { "None" }),
+                    InfoItem("Source", status.activeMode.name.lowercase().replaceFirstChar { c -> c.uppercase() })
+                )
+            ),
+            InfoSection("Toolchain versions", infoItems)
         )
     }
 

@@ -24,10 +24,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,8 +54,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.icy.devcheckplus.data.AppManagementController
 import com.icy.devcheckplus.data.AppsDataProvider
 import com.icy.devcheckplus.model.InstalledAppItem
+import com.icy.devcheckplus.ui.components.AppActionConfirmationDialog
+import com.icy.devcheckplus.ui.components.AppActionFailureDialog
+import com.icy.devcheckplus.ui.components.AppManagementAction
 import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassEmptyState
 import com.icy.devcheckplus.ui.components.LocateMatchEffect
@@ -58,6 +69,11 @@ import com.icy.devcheckplus.ui.components.locateRowIndex
 import com.icy.devcheckplus.ui.components.rememberMatchHighlight
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.rememberHapticTick
+import com.icy.devcheckplus.ui.theme.AccentOrange
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun InstalledAppsScreen(
@@ -66,16 +82,51 @@ fun InstalledAppsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var apps by remember { mutableStateOf<List<InstalledAppItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var filterType by remember { mutableStateOf(0) } // 0: All, 1: User, 2: System
+    var lastScanned by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         apps = AppsDataProvider.getInstalledApps(context)
+        lastScanned = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         loading = false
     }
 
+    // Management state is hoisted here so at most one action is in flight on the
+    // whole screen, and the confirmation + result dialogs stay with the screen.
+    var pendingAction by remember { mutableStateOf<Pair<InstalledAppItem, AppManagementAction>?>(null) }
+    var busyPackage by remember { mutableStateOf<String?>(null) }
+    var failureMessage by remember { mutableStateOf<String?>(null) }
+
+    fun perform(action: AppManagementAction, app: InstalledAppItem) {
+        if (busyPackage != null) return
+        busyPackage = app.packageName
+        scope.launch {
+            val result = when (action) {
+                AppManagementAction.FORCE_STOP -> AppManagementController.forceStop(context, app.packageName)
+                AppManagementAction.UNINSTALL -> AppManagementController.uninstall(context, app.packageName)
+            }
+            busyPackage = null
+            when (result) {
+                is AppManagementController.AppActionResult.Failure -> failureMessage = result.message
+                is AppManagementController.AppActionResult.Success -> {
+                    // Refresh the list so an uninstalled package disappears.
+                    if (action == AppManagementAction.UNINSTALL) {
+                        apps = AppsDataProvider.getInstalledApps(context)
+                    }
+                }
+            }
+        }
+    }
+
     val tick = rememberHapticTick()
+    val selfName = remember(context) {
+        runCatching { context.applicationInfo.loadLabel(context.packageManager).toString() }
+            .getOrDefault(context.packageName)
+    }
+    val selfPackage = context.packageName
 
     // Counted once per loaded list instead of three times per recomposition:
     // `apps.count { … }` over every package used to run on *every* keystroke,
@@ -162,13 +213,53 @@ fun InstalledAppsScreen(
                     key = { it.packageName },
                     contentType = { "app" }
                 ) { app ->
-                    AppItemCard(app = app)
+                    AppItemCard(
+                        app = app,
+                        isSelf = app.packageName == selfPackage,
+                        busy = busyPackage == app.packageName,
+                        onAction = { action -> pendingAction = app to action }
+                    )
+                }
+                item(key = "apps_scanned_footer") {
+                    if (lastScanned != null) {
+                        Text(
+                            text = "Scanned $lastScanned • ${apps.size} packages",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 12.dp)
+                        )
+                    }
                 }
                 item(key = "apps_bottom_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
+    }
+
+    // Confirmation dialog for the pending action.
+    val pending = pendingAction
+    if (pending != null) {
+        AppActionConfirmationDialog(
+            action = pending.second,
+            appName = pending.first.appName,
+            packageName = pending.first.packageName,
+            isSystemApp = pending.first.isSystemApp,
+            isSelf = pending.first.packageName == selfPackage,
+            selfName = selfName,
+            onConfirm = {
+                pendingAction = null
+                perform(pending.second, pending.first)
+            },
+            onDismiss = { pendingAction = null }
+        )
+    }
+
+    val failure = failureMessage
+    if (failure != null) {
+        AppActionFailureDialog(message = failure, onDismiss = { failureMessage = null })
     }
 }
 
@@ -190,7 +281,12 @@ private fun rememberAppIcon(packageName: String): ImageBitmap? {
 }
 
 @Composable
-fun AppItemCard(app: InstalledAppItem) {
+fun AppItemCard(
+    app: InstalledAppItem,
+    isSelf: Boolean = false,
+    busy: Boolean = false,
+    onAction: ((AppManagementAction) -> Unit)? = null
+) {
     var expanded by remember { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
     val icon = rememberAppIcon(app.packageName)
@@ -272,6 +368,18 @@ fun AppItemCard(app: InstalledAppItem) {
 
                 Spacer(modifier = Modifier.width(8.dp))
 
+                if (onAction != null) {
+                    if (busy) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = scheme.primary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        AppOverflowMenu(app = app, onAction = onAction)
+                    }
+                }
+
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = app.apkSizeFormatted,
@@ -280,9 +388,13 @@ fun AppItemCard(app: InstalledAppItem) {
                         color = scheme.primary
                     )
                     Text(
-                        text = if (app.isSystemApp) "System" else "User",
+                        text = when {
+                            isSelf -> "This app"
+                            app.isSystemApp -> "System"
+                            else -> "User"
+                        },
                         style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant
+                        color = if (isSelf) AccentOrange else scheme.onSurfaceVariant
                     )
                 }
 
@@ -327,6 +439,68 @@ fun AppItemCard(app: InstalledAppItem) {
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Row overflow menu: Force stop / Uninstall. Kept as its own leaf so the menu
+ * open/close state never recomposes the app row above it.
+ */
+@Composable
+private fun AppOverflowMenu(
+    app: InstalledAppItem,
+    onAction: (AppManagementAction) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    val tick = rememberHapticTick()
+    Box {
+        IconButton(onClick = { tick(); expanded = true }) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "Actions for ${app.appName}",
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.StopCircle,
+                            contentDescription = null,
+                            tint = AccentOrange,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Force stop")
+                    }
+                },
+                onClick = {
+                    expanded = false
+                    onAction(AppManagementAction.FORCE_STOP)
+                }
+            )
+            DropdownMenuItem(
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteOutline,
+                            contentDescription = null,
+                            tint = scheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Uninstall")
+                    }
+                },
+                onClick = {
+                    expanded = false
+                    onAction(AppManagementAction.UNINSTALL)
+                }
+            )
         }
     }
 }

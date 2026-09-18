@@ -3,6 +3,7 @@ package com.icy.devcheckplus.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeveloperBoard
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Memory
@@ -31,5 +32,6 @@ enum class NavCategory(
     LOGS("System Logs", Icons.Default.ReceiptLong, "Live Logcat Viewer & Filters"),
     SENSORS("Sensors", Icons.Default.Sensors, "Live Hardware Sensors & Real-time Graphing"),
     CONSOLE("Console", Icons.Default.Terminal, "Run commands with the active privilege"),
+    DEV_ENVIRONMENT("Dev Environment", Icons.Default.Code, "Detect installed toolchains via the shell"),
     SETTINGS("Settings", Icons.Default.Settings, "Privilege Mode, Lookups, About")
 }
