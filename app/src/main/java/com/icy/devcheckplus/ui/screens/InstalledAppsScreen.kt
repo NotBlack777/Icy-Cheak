@@ -1,25 +1,29 @@
 package com.icy.devcheckplus.ui.screens
 
-import com.icy.devcheckplus.ui.components.rememberHapticTick
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -33,12 +37,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.AppsDataProvider
 import com.icy.devcheckplus.model.InstalledAppItem
+import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.components.rememberHapticTick
 
 @Composable
 fun InstalledAppsScreen(
@@ -57,6 +68,15 @@ fun InstalledAppsScreen(
 
     val tick = rememberHapticTick()
 
+    // Counted once per loaded list instead of three times per recomposition:
+    // `apps.count { … }` over every package used to run on *every* keystroke,
+    // because the chips are part of the screen that reads `searchQuery`.
+    val userCount = remember(apps) { apps.count { !it.isSystemApp } }
+    val systemCount = remember(apps) { apps.count { it.isSystemApp } }
+
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
+
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -67,17 +87,20 @@ fun InstalledAppsScreen(
             FilterChip(
                 selected = filterType == 0,
                 onClick = { tick(); filterType = 0 },
-                label = { Text("All (${apps.size})") }
+                label = { Text("All (${apps.size})") },
+                modifier = Modifier.heightIn(min = 48.dp)
             )
             FilterChip(
                 selected = filterType == 1,
                 onClick = { tick(); filterType = 1 },
-                label = { Text("User (${apps.count { !it.isSystemApp }})") }
+                label = { Text("User ($userCount)") },
+                modifier = Modifier.heightIn(min = 48.dp)
             )
             FilterChip(
                 selected = filterType == 2,
                 onClick = { tick(); filterType = 2 },
-                label = { Text("System (${apps.count { it.isSystemApp }})") }
+                label = { Text("System ($systemCount)") },
+                modifier = Modifier.heightIn(min = 48.dp)
             )
         }
 
@@ -101,11 +124,18 @@ fun InstalledAppsScreen(
                 }
             }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(filtered) { app ->
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                // Stable key per package: filtering or toggling a chip now moves
+                // existing rows instead of rebuilding every visible item, which
+                // also keeps each app's expanded state with the right app.
+                items(
+                    items = filtered,
+                    key = { it.packageName },
+                    contentType = { "app" }
+                ) { app ->
                     AppItemCard(app = app)
                 }
-                item {
+                item(key = "apps_bottom_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
@@ -113,41 +143,88 @@ fun InstalledAppsScreen(
     }
 }
 
+/**
+ * App icon decoded off the main thread and cached in [AppsDataProvider]. Until it
+ * arrives (or if the icon cannot be read) the rounded-square glyph below is shown,
+ * so the row never reflows.
+ */
+@Composable
+private fun rememberAppIcon(packageName: String): ImageBitmap? {
+    val context = LocalContext.current
+    var icon by remember(packageName) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(packageName) {
+        if (icon == null) {
+            icon = AppsDataProvider.loadAppIcon(context, packageName)?.asImageBitmap()
+        }
+    }
+    return icon
+}
+
 @Composable
 fun AppItemCard(app: InstalledAppItem) {
     var expanded by remember { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    val icon = rememberAppIcon(app.packageName)
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(12.dp)
+    GlassCard(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(16.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+        frosted = false
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { expanded = !expanded }
-                .padding(14.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Same rounded-square icon well used by every other screen.
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(scheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (icon != null) {
+                        Image(
+                            bitmap = icon,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Android,
+                            contentDescription = null,
+                            tint = scheme.primary,
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = app.appName,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = scheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = app.packageName,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
+                        color = scheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -158,20 +235,22 @@ fun AppItemCard(app: InstalledAppItem) {
                         text = app.apkSizeFormatted,
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = scheme.primary
                     )
                     Text(
                         text = if (app.isSystemApp) "System" else "User",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = scheme.onSurfaceVariant
                     )
                 }
 
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
-                    modifier = Modifier.padding(start = 8.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    contentDescription = if (expanded) "Collapse details" else "Expand details",
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                        .size(20.dp),
+                    tint = scheme.onSurfaceVariant
                 )
             }
 
@@ -180,12 +259,12 @@ fun AppItemCard(app: InstalledAppItem) {
                 Text(
                     text = "Version: ${app.versionName} (${app.versionCode})",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = scheme.onSurface
                 )
                 Text(
                     text = "Installed: ${app.firstInstallTime} • Updated: ${app.lastUpdateTime}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = scheme.onSurfaceVariant,
                     fontSize = 11.sp
                 )
 
@@ -195,12 +274,12 @@ fun AppItemCard(app: InstalledAppItem) {
                         text = "Permissions (${app.permissions.size}):",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = scheme.primary
                     )
                     Text(
                         text = app.permissions.joinToString("\n") { it.substringAfterLast(".") },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = scheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         lineHeight = 16.sp
                     )

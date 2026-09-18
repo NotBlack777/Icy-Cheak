@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Sensors
@@ -33,6 +34,7 @@ import com.icy.devcheckplus.model.SensorLiveData
 import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.MiniGraph
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 
 @Composable
@@ -42,7 +44,11 @@ fun SensorsScreen(
 ) {
     val context = LocalContext.current
     val monitor = remember { SensorLiveMonitor(context) }
-    val sensorsMap by monitor.sensorsFlow.collectAsState()
+    // Lifecycle-aware: the sensor flow stops being observed in the background,
+    // and the monitor below tears its worker thread down at the same moment.
+    val sensorsMap by monitor.sensorsFlow.collectAsStateWithLifecycle(
+        initialValue = monitor.sensorsFlow.value
+    )
     val foreground = rememberIsForeground()
 
     // Sampling only happens while this screen is composed AND the app is in the
@@ -51,6 +57,9 @@ fun SensorsScreen(
         if (foreground) monitor.startListening()
         onDispose { monitor.stopListening() }
     }
+
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     val sensorList = remember(sensorsMap) {
         sensorsMap.values.toList().sortedBy { it.name }
@@ -74,7 +83,7 @@ fun SensorsScreen(
             )
         }
     } else {
-        LazyColumn(modifier = modifier.fillMaxSize()) {
+        LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
             item(key = "sensors_header") {
                 GlassSectionHeader(
                     title = "LIVE SENSORS",

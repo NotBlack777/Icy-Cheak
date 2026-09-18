@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Adb
@@ -37,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.BuildConfig
 import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.data.LiveMetricsRepository
@@ -68,6 +69,7 @@ import com.icy.devcheckplus.ui.components.SelectableTile
 import com.icy.devcheckplus.ui.components.ThemeModePreview
 import com.icy.devcheckplus.ui.components.TileGrid
 import com.icy.devcheckplus.ui.components.TileIconPreview
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
@@ -81,72 +83,54 @@ import kotlinx.coroutines.launch
  * public IP lookup opt-in, onboarding relaunch, about) and the persisted keys
  * are untouched; only the presentation changed, plus the new Appearance section
  * with Dark / OLED themes and dynamic colour.
+ *
+ * Recomposition note: this screen root intentionally subscribes to *nothing*.
+ * Each card collects exactly the preference it renders (and the privilege banner
+ * its own status), so flipping a switch or picking a theme tile invalidates that
+ * card alone — previously every one of these flows was read at the top of
+ * [SettingsScreen], which meant the whole LazyColumn re-ran on any change.
  */
 @Composable
 fun SettingsScreen(
     onResetOnboarding: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val privilegeStatus by PrivilegeManager.status.collectAsState()
-    val themeMode by AppSettingsStore.themeMode.collectAsState()
-    val dynamicColor by AppSettingsStore.dynamicColor.collectAsState()
-    val hapticFeedback by AppSettingsStore.hapticFeedback.collectAsState()
-    val publicIpLookup by AppSettingsStore.publicIpLookup.collectAsState()
     var showExportDialog by remember { mutableStateOf(false) }
 
-    val selectMode: (PrivilegeMode) -> Unit = { mode ->
-        PrivilegeManager.setPreferredMode(context, mode)
-        // Telemetry availability depends on the privilege level — drop stale points.
-        LiveMetricsRepository.reset()
-        if (mode == PrivilegeMode.ROOT && !privilegeStatus.rootGranted) {
-            scope.launch { PrivilegeManager.requestRootAccess() }
-        } else if (mode == PrivilegeMode.SHIZUKU && !privilegeStatus.shizukuGranted) {
-            PrivilegeManager.requestShizukuPermission()
-        }
-    }
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     Box(modifier = modifier.fillMaxSize()) {
         AmbientBackground(modifier = Modifier.matchParentSize())
 
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 36.dp)
         ) {
             item(key = "settings_header") {
-                SettingsHeader(status = privilegeStatus)
+                SettingsHeader()
             }
 
             item(key = "header_appearance") {
                 GlassSectionHeader(title = "APPEARANCE", icon = Icons.Default.Palette)
             }
             item(key = "card_theme") {
-                ThemeCard(
-                    themeMode = themeMode,
-                    dynamicColor = dynamicColor,
-                    hapticFeedback = hapticFeedback,
-                    onThemeModeChange = { AppSettingsStore.setThemeMode(context, it) },
-                    onDynamicColorChange = { AppSettingsStore.setDynamicColor(context, it) },
-                    onHapticFeedbackChange = { AppSettingsStore.setHapticFeedback(context, it) }
-                )
+                ThemeCard()
             }
 
             item(key = "header_privilege") {
                 GlassSectionHeader(title = "PRIVILEGE ENGINE", icon = Icons.Default.Lock)
             }
             item(key = "card_privilege") {
-                PrivilegeCard(status = privilegeStatus, onSelectMode = selectMode)
+                PrivilegeCard()
             }
 
             item(key = "header_privacy") {
                 GlassSectionHeader(title = "PRIVACY & NETWORK", icon = Icons.Default.Public)
             }
             item(key = "card_privacy") {
-                PrivacyCard(
-                    publicIpLookup = publicIpLookup,
-                    onPublicIpChange = { AppSettingsStore.setPublicIpLookup(context, it) }
-                )
+                PrivacyCard()
             }
 
             item(key = "header_general") {
@@ -167,7 +151,7 @@ fun SettingsScreen(
                 GlassSectionHeader(title = "ABOUT", icon = Icons.Default.Info)
             }
             item(key = "card_about") {
-                AboutCard(status = privilegeStatus, themeMode = themeMode, dynamicColor = dynamicColor)
+                AboutCard()
             }
 
             item(key = "settings_footer") {
@@ -189,9 +173,15 @@ fun SettingsScreen(
     }
 }
 
+/** Status pill source — collected where it is displayed, not at screen level. */
 @Composable
-private fun SettingsHeader(status: PrivilegeStatus) {
+private fun rememberPrivilegeStatus(): PrivilegeStatus =
+    PrivilegeManager.status.collectAsStateWithLifecycle(initialValue = PrivilegeManager.status.value).value
+
+@Composable
+private fun SettingsHeader() {
     val scheme = MaterialTheme.colorScheme
+    val status = rememberPrivilegeStatus()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -268,16 +258,15 @@ private fun StatusPill(status: PrivilegeStatus) {
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun ThemeCard(
-    themeMode: ThemeMode,
-    dynamicColor: Boolean,
-    hapticFeedback: Boolean,
-    onThemeModeChange: (ThemeMode) -> Unit,
-    onDynamicColorChange: (Boolean) -> Unit,
-    onHapticFeedbackChange: (Boolean) -> Unit
-) {
+private fun ThemeCard() {
+    val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
+
+    // Collected here: a theme pick or a toggle only invalidates this card.
+    val themeMode by AppSettingsStore.themeMode.collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
+    val dynamicColor by AppSettingsStore.dynamicColor.collectAsStateWithLifecycle(initialValue = AppSettingsStore.dynamicColor.value)
+    val hapticFeedback by AppSettingsStore.hapticFeedback.collectAsStateWithLifecycle(initialValue = AppSettingsStore.hapticFeedback.value)
 
     GlassCard(frosted = true) {
         Text(
@@ -299,7 +288,7 @@ private fun ThemeCard(
         TileGrid(items = themeModes, columns = 2, spacing = 10.dp, aspectRatio = 1f) { tileModifier, mode ->
             SelectableTile(
                 selected = mode == themeMode,
-                onClick = { onThemeModeChange(mode) },
+                onClick = { AppSettingsStore.setThemeMode(context, mode) },
                 modifier = tileModifier,
                 label = mode.label,
                 supporting = mode.tagline,
@@ -326,7 +315,10 @@ private fun ThemeCard(
                 "Wallpaper colours need Android 12+ — the built-in cyan palette is used."
             },
             trailing = {
-                HapticSwitch(checked = dynamicColor, onCheckedChange = onDynamicColorChange)
+                HapticSwitch(
+                    checked = dynamicColor,
+                    onCheckedChange = { AppSettingsStore.setDynamicColor(context, it) }
+                )
             }
         )
 
@@ -341,7 +333,10 @@ private fun ThemeCard(
             icon = Icons.Default.Vibration,
             subtitle = "A light tick on toggles, tile selections and pin stars.",
             trailing = {
-                HapticSwitch(checked = hapticFeedback, onCheckedChange = onHapticFeedbackChange)
+                HapticSwitch(
+                    checked = hapticFeedback,
+                    onCheckedChange = { AppSettingsStore.setHapticFeedback(context, it) }
+                )
             }
         )
     }
@@ -403,12 +398,23 @@ private val modeEntries = listOf(
 )
 
 @Composable
-private fun PrivilegeCard(
-    status: PrivilegeStatus,
-    onSelectMode: (PrivilegeMode) -> Unit
-) {
+private fun PrivilegeCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
+    val status = rememberPrivilegeStatus()
+
+    val selectMode: (PrivilegeMode) -> Unit = { mode ->
+        PrivilegeManager.setPreferredMode(context, mode)
+        // Telemetry availability depends on the privilege level — drop stale points.
+        LiveMetricsRepository.reset()
+        if (mode == PrivilegeMode.ROOT && !status.rootGranted) {
+            scope.launch { PrivilegeManager.requestRootAccess() }
+        } else if (mode == PrivilegeMode.SHIZUKU && !status.shizukuGranted) {
+            PrivilegeManager.requestShizukuPermission()
+        }
+    }
 
     GlassCard(frosted = true) {
         Row(
@@ -438,7 +444,7 @@ private fun PrivilegeCard(
             val selected = status.preferredMode == entry.mode
             SelectableTile(
                 selected = selected,
-                onClick = { onSelectMode(entry.mode) },
+                onClick = { selectMode(entry.mode) },
                 modifier = tileModifier,
                 label = entry.label,
                 supporting = entry.short,
@@ -454,7 +460,10 @@ private fun PrivilegeCard(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        DetailNote(text = modeEntries.firstOrNull { it.mode == status.preferredMode }?.detail ?: modeEntries[0].detail)
+        DetailNote(
+            text = modeEntries.firstOrNull { it.mode == status.preferredMode }?.detail
+                ?: modeEntries[0].detail
+        )
     }
 }
 
@@ -463,12 +472,12 @@ private fun PrivilegeCard(
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun PrivacyCard(
-    publicIpLookup: Boolean,
-    onPublicIpChange: (Boolean) -> Unit
-) {
+private fun PrivacyCard() {
+    val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
+    val publicIpLookup by AppSettingsStore.publicIpLookup
+        .collectAsStateWithLifecycle(initialValue = AppSettingsStore.publicIpLookup.value)
 
     GlassCard(frosted = true) {
         GlassRow(
@@ -476,7 +485,10 @@ private fun PrivacyCard(
             icon = Icons.Default.Public,
             subtitle = "Sends a lightweight request to api.ipify.org to show your external IPv4 in the Network tab.",
             trailing = {
-                HapticSwitch(checked = publicIpLookup, onCheckedChange = onPublicIpChange)
+                HapticSwitch(
+                    checked = publicIpLookup,
+                    onCheckedChange = { AppSettingsStore.setPublicIpLookup(context, it) }
+                )
             }
         )
 
@@ -489,7 +501,7 @@ private fun PrivacyCard(
         GlassRow(
             title = "Live telemetry polling",
             icon = Icons.Default.Speed,
-            subtitle = "CPU, RAM and battery charts sample once per second, only while the tab is visible, and pause in the background.",
+            subtitle = "CPU, RAM and battery charts share one sampling loop, only while a screen is visible, and pause in the background.",
             trailing = { PillLabel(text = "1 s") }
         )
     }
@@ -552,12 +564,11 @@ private fun GeneralCard(onResetOnboarding: () -> Unit) {
 }
 
 @Composable
-private fun AboutCard(
-    status: PrivilegeStatus,
-    themeMode: ThemeMode,
-    dynamicColor: Boolean
-) {
+private fun AboutCard() {
     val scheme = MaterialTheme.colorScheme
+    val status = rememberPrivilegeStatus()
+    val themeMode by AppSettingsStore.themeMode.collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
+    val dynamicColor by AppSettingsStore.dynamicColor.collectAsStateWithLifecycle(initialValue = AppSettingsStore.dynamicColor.value)
 
     GlassCard(frosted = true) {
         Row(
@@ -646,7 +657,7 @@ private fun InfoPill(label: String, value: String, modifier: Modifier = Modifier
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
             color = scheme.onSurface,
-            maxLines = 1
+            maxLines = 2
         )
     }
 }
@@ -679,6 +690,11 @@ private fun DetailNote(text: String) {
     }
 }
 
+/**
+ * Static value chip. It carries **no** click indication on purpose: an
+ * interactive value uses `PillAction` instead, so a chip that cannot be tapped
+ * can never look tappable.
+ */
 @Composable
 private fun PillLabel(text: String) {
     val scheme = MaterialTheme.colorScheme

@@ -67,10 +67,19 @@ fun GlassCard(
     val spec = LocalGlassSpec.current
     val scheme = MaterialTheme.colorScheme
 
+    // Read in this small scope (the card itself, not the screen): scrolling
+    // start/stop is the only thing that invalidates it, and the content lambda
+    // below is skipped because its parameters did not change. During a fling the
+    // per-card offscreen layers (elevation shadow + blur) are simply not
+    // requested, which is what removes the frame drops on long lists; they come
+    // back the moment the finger lifts.
+    val scrolling = LocalScrollActivity.current.value
+    val elevation = if (scrolling) 0.dp else spec.cardElevation
+
     Box(
         modifier = modifier
             .shadow(
-                elevation = spec.cardElevation,
+                elevation = elevation,
                 shape = shape,
                 clip = false,
                 ambientColor = ShadowTint,
@@ -81,7 +90,7 @@ fun GlassCard(
         if (frosted) {
             FrostedLayer(
                 shape = shape,
-                radius = spec.cardBlurRadius,
+                radius = if (scrolling) 0.dp else spec.cardBlurRadius,
                 primary = scheme.primary,
                 tertiary = scheme.tertiary,
                 modifier = Modifier.matchParentSize()
@@ -122,11 +131,13 @@ fun GlassTopBar(
 ) {
     val spec = LocalGlassSpec.current
     val scheme = MaterialTheme.colorScheme
+    // Same rule as cards: no offscreen blur layer while the content below scrolls.
+    val scrolling = LocalScrollActivity.current.value
 
     Box(modifier = modifier.clip(shape)) {
         FrostedLayer(
             shape = shape,
-            radius = spec.barBlurRadius,
+            radius = if (scrolling) 0.dp else spec.barBlurRadius,
             primary = scheme.primary,
             tertiary = scheme.secondary,
             modifier = Modifier.matchParentSize()

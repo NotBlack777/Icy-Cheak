@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -45,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.LogcatDataProvider
 import com.icy.devcheckplus.model.LogcatEntry
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
@@ -69,6 +71,8 @@ fun SystemLogsScreen(
     val foreground = rememberIsForeground()
 
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     fun fetchLogs() {
         scope.launch {
@@ -176,11 +180,15 @@ fun SystemLogsScreen(
                 }
             }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(filtered) { entry ->
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                items(
+                    items = filtered,
+                    key = { "${it.timestamp}-${it.pid}-${it.tag}-${it.message.hashCode()}" },
+                    contentType = { "log" }
+                ) { entry ->
                     LogEntryCard(entry = entry)
                 }
-                item {
+                item(key = "logs_bottom_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }

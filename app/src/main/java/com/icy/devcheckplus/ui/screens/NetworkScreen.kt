@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.NetworkDataProvider
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.components.InfoSectionCard
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 
 @Composable
 fun NetworkScreen(
@@ -41,6 +43,9 @@ fun NetworkScreen(
         sections = NetworkDataProvider.getNetworkSections(context, fetchPublicIp)
         loading = false
     }
+
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     if (loading) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -70,8 +75,8 @@ fun NetworkScreen(
                 )
             }
         } else {
-            LazyColumn(modifier = modifier.fillMaxSize()) {
-                items(filteredSections) { sec ->
+            LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
+                items(filteredSections, key = { it.title }) { sec ->
                     InfoSectionCard(section = sec, category = PinnableCategory.NETWORK)
                 }
                 item {

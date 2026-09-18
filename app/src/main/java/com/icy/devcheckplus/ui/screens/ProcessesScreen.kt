@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.ProcessDataProvider
 import com.icy.devcheckplus.model.ProcessItem
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import kotlinx.coroutines.launch
 
@@ -53,6 +55,8 @@ fun ProcessesScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     fun loadProcesses() {
         scope.launch {
@@ -135,11 +139,11 @@ fun ProcessesScreen(
                 }
             }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(filtered) { proc ->
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                items(items = filtered, key = { "${it.pid}-${it.name}" }, contentType = { "process" }) { proc ->
                     ProcessCard(item = proc)
                 }
-                item {
+                item(key = "processes_bottom_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }

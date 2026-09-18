@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
@@ -60,13 +61,14 @@ fun SearchSuggestionRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             contentPadding = PaddingValues(vertical = 2.dp)
         ) {
-            items(suggestions) { term ->
+            items(items = suggestions, key = { it }) { term ->
                 FilterChip(
                     selected = false,
                     onClick = {
                         tick()
                         onSuggestionClick(term)
                     },
+                    modifier = Modifier.heightIn(min = 48.dp),
                     label = {
                         Text(
                             text = term,
@@ -88,7 +90,9 @@ fun SearchSuggestionRow(
         }
         IconButton(
             onClick = onClearHistory,
-            modifier = Modifier.size(34.dp)
+            // Kept at the platform minimum touch target (48 dp) — the icon inside
+            // stays small, the tappable area does not.
+            modifier = Modifier.size(48.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Close,

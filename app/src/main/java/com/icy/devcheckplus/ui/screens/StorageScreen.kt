@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,6 +35,7 @@ import com.icy.devcheckplus.data.StorageDataProvider
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.model.PartitionItem
 import com.icy.devcheckplus.ui.components.InfoSectionCard
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 
 @Composable
 fun StorageScreen(
@@ -51,6 +53,9 @@ fun StorageScreen(
         partitions = part
         loading = false
     }
+
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     if (loading) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -80,13 +85,13 @@ fun StorageScreen(
             }
         }
 
-        LazyColumn(modifier = modifier.fillMaxSize()) {
-            items(filteredSections) { sec ->
+        LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
+            items(filteredSections, key = { it.title }) { sec ->
                 InfoSectionCard(section = sec, category = PinnableCategory.STORAGE)
             }
 
             if (filteredPartitions.isNotEmpty()) {
-                item {
+                item(key = "storage_partition_header") {
                     Text(
                         text = "Partition Breakdown",
                         style = MaterialTheme.typography.titleMedium,
@@ -96,12 +101,12 @@ fun StorageScreen(
                     )
                 }
 
-                items(filteredPartitions) { part ->
+                items(filteredPartitions, key = { it.mountPoint }) { part ->
                     PartitionCard(item = part)
                 }
             }
 
-            item {
+            item(key = "storage_bottom_spacer") {
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }

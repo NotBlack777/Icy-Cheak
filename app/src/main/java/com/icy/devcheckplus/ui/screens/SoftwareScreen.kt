@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.SoftwareDataProvider
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.components.InfoSectionCard
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 
 @Composable
 fun SoftwareScreen(
@@ -37,6 +39,9 @@ fun SoftwareScreen(
         sections = SoftwareDataProvider.getSoftwareSections(context)
         loading = false
     }
+
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     if (loading) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -68,8 +73,8 @@ fun SoftwareScreen(
                 )
             }
         } else {
-            LazyColumn(modifier = modifier.fillMaxSize()) {
-                items(filteredSections) { sec ->
+            LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
+                items(filteredSections, key = { it.title }) { sec ->
                     InfoSectionCard(section = sec, category = PinnableCategory.SOFTWARE)
                 }
                 item {

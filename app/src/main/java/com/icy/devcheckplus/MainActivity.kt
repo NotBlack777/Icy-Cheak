@@ -1,6 +1,5 @@
 package com.icy.devcheckplus
 
-import com.icy.devcheckplus.ui.components.rememberHapticTick
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,12 +42,11 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,20 +56,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.navigation.NavCategory
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
+import com.icy.devcheckplus.ui.components.ScrollActivityProvider
 import com.icy.devcheckplus.ui.components.SearchSuggestionRow
+import com.icy.devcheckplus.ui.components.rememberHapticTick
 import com.icy.devcheckplus.ui.screens.BatteryScreen
 import com.icy.devcheckplus.ui.screens.ConsoleScreen
 import com.icy.devcheckplus.ui.screens.DashboardScreen
@@ -94,11 +95,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             // Appearance prefs are mirrored into StateFlows by AppSettingsStore, so a
             // theme change in Settings is applied app-wide on the next frame.
-            val themeMode by AppSettingsStore.themeMode.collectAsState()
-            val dynamicColor by AppSettingsStore.dynamicColor.collectAsState()
+            // Lifecycle-aware collection: nothing keeps observing while backgrounded.
+            val themeMode by AppSettingsStore.themeMode
+                .collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
+            val dynamicColor by AppSettingsStore.dynamicColor
+                .collectAsStateWithLifecycle(initialValue = AppSettingsStore.dynamicColor.value)
 
             DevCheckPlusTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
-                MainAppContainer()
+                // One flag for the whole app: while any list is being scrolled the
+                // blur layers, card elevation shadows and the ambient animation
+                // stand down (see ScrollActivity.kt).
+                ScrollActivityProvider {
+                    MainAppContainer()
+                }
             }
         }
     }
@@ -124,30 +133,30 @@ fun MainAppContainer() {
     }
 }
 
+/**
+ * Search field state, held in one stable object.
+ *
+ * Hoisting the *value* into this holder (instead of `mutableStateOf` on the
+ * screen) is what keeps typing cheap: reads now happen inside the app-bar
+ * composables and inside the screen content lambda, so a keystroke no longer
+ * recomposes the drawer, the Scaffold, the FAB and the animation container.
+ */
+@Stable
+private class SearchState {
+    var query by mutableStateOf("")
+    var focused by mutableStateOf(false)
+}
+
 @Composable
 fun MainDashboardScreen(
     onResetOnboarding: () -> Unit
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     var currentCategory by remember { mutableStateOf(NavCategory.DASHBOARD) }
-    var searchQuery by remember { mutableStateOf("") }
-    var searchFocused by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
-    val searchHistory by AppSettingsStore.searchHistory.collectAsState()
+    val search = remember { SearchState() }
     val hapticTick = rememberHapticTick()
-
-    // Remember what the user actually searched for: only the term that survives
-    // 1.2 s of idle typing is stored, so intermediate keystrokes are skipped.
-    LaunchedEffect(searchQuery) {
-        val term = searchQuery.trim()
-        if (term.length < 2) return@LaunchedEffect
-        delay(1_200)
-        AppSettingsStore.addSearchTerm(context, term)
-    }
-    val privilegeStatus by PrivilegeManager.status.collectAsState()
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -240,92 +249,12 @@ fun MainDashboardScreen(
             floatingActionButtonPosition = FabPosition.End,
             topBar = {
                 GlassTopBar(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        // Top Search Bar
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(
-                                    imageVector = Icons.Default.Menu,
-                                    contentDescription = "Menu",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            OutlinedTextField(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
-                                placeholder = {
-                                    Text(
-                                        text = "Search ${currentCategory.title}...",
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Search,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                trailingIcon = {
-                                    if (searchQuery.isNotEmpty()) {
-                                        IconButton(onClick = { searchQuery = "" }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Clear,
-                                                contentDescription = "Clear search",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(
-                                    onSearch = {
-                                        AppSettingsStore.addSearchTerm(context, searchQuery)
-                                        focusManager.clearFocus()
-                                    }
-                                ),
-                                shape = RoundedCornerShape(24.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                                ),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(50.dp)
-                                    .onFocusChanged { searchFocused = it.isFocused }
-                            )
-                        }
-
-                        // Quick-tap recent searches while the field is focused and empty.
-                        if (searchFocused && searchQuery.isEmpty() && searchHistory.isNotEmpty()) {
-                            SearchSuggestionRow(
-                                suggestions = searchHistory,
-                                onSuggestionClick = { term ->
-                                    searchQuery = term
-                                    AppSettingsStore.addSearchTerm(context, term)
-                                },
-                                onClearHistory = { AppSettingsStore.clearSearchHistory(context) }
-                            )
-                        }
-
-                        // Privilege banner
-                        PrivilegeStatusHeader(
-                            status = privilegeStatus,
-                            onStatusClick = { currentCategory = NavCategory.SETTINGS }
-                        )
-                    }
+                    SearchHeader(
+                        search = search,
+                        currentCategory = currentCategory,
+                        onOpenDrawer = { scope.launch { drawerState.open() } },
+                        onStatusClick = { currentCategory = NavCategory.SETTINGS }
+                    )
                 }
             }
         ) { innerPadding ->
@@ -342,17 +271,20 @@ fun MainDashboardScreen(
                     },
                     label = "CategoryTransition"
                 ) { category ->
+                    // Reading the query *here* (inside the animation content) is
+                    // deliberate: typing invalidates the active screen only.
+                    val query = search.query
                     when (category) {
-                        NavCategory.DASHBOARD -> DashboardScreen(searchQuery = searchQuery)
-                        NavCategory.HARDWARE -> HardwareScreen(searchQuery = searchQuery)
-                        NavCategory.SOFTWARE -> SoftwareScreen(searchQuery = searchQuery)
-                        NavCategory.BATTERY -> BatteryScreen(searchQuery = searchQuery)
-                        NavCategory.STORAGE -> StorageScreen(searchQuery = searchQuery)
-                        NavCategory.NETWORK -> NetworkScreen(searchQuery = searchQuery)
-                        NavCategory.PROCESSES -> ProcessesScreen(searchQuery = searchQuery)
-                        NavCategory.APPS -> InstalledAppsScreen(searchQuery = searchQuery)
-                        NavCategory.LOGS -> SystemLogsScreen(searchQuery = searchQuery)
-                        NavCategory.SENSORS -> SensorsScreen(searchQuery = searchQuery)
+                        NavCategory.DASHBOARD -> DashboardScreen(searchQuery = query)
+                        NavCategory.HARDWARE -> HardwareScreen(searchQuery = query)
+                        NavCategory.SOFTWARE -> SoftwareScreen(searchQuery = query)
+                        NavCategory.BATTERY -> BatteryScreen(searchQuery = query)
+                        NavCategory.STORAGE -> StorageScreen(searchQuery = query)
+                        NavCategory.NETWORK -> NetworkScreen(searchQuery = query)
+                        NavCategory.PROCESSES -> ProcessesScreen(searchQuery = query)
+                        NavCategory.APPS -> InstalledAppsScreen(searchQuery = query)
+                        NavCategory.LOGS -> SystemLogsScreen(searchQuery = query)
+                        NavCategory.SENSORS -> SensorsScreen(searchQuery = query)
                         NavCategory.CONSOLE -> ConsoleScreen()
                         NavCategory.SETTINGS -> SettingsScreen(onResetOnboarding = onResetOnboarding)
                     }
@@ -363,5 +295,131 @@ fun MainDashboardScreen(
         if (showExportDialog) {
             ExportReportDialog(onDismiss = { showExportDialog = false })
         }
+    }
+}
+
+/**
+ * Top bar: search field, recent-search chips and the privilege banner.
+ *
+ * Everything that changes per keystroke lives in here, so the rest of the screen
+ * (and the whole screen tree below) is untouched while typing.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchHeader(
+    search: SearchState,
+    currentCategory: NavCategory,
+    onOpenDrawer: () -> Unit,
+    onStatusClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val searchHistory by AppSettingsStore.searchHistory
+        .collectAsStateWithLifecycle(initialValue = AppSettingsStore.searchHistory.value)
+
+    // Remember what the user actually searched for: only the term that survives
+    // 1.2 s of idle typing is stored, so intermediate keystrokes are skipped.
+    SearchTermRecorder(query = search.query)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onOpenDrawer) {
+                Icon(
+                    imageVector = Icons.Default.Menu,
+                    contentDescription = "Menu",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            OutlinedTextField(
+                value = search.query,
+                onValueChange = { search.query = it },
+                placeholder = {
+                    Text(
+                        text = "Search ${currentCategory.title}...",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingIcon = {
+                    if (search.query.isNotEmpty()) {
+                        IconButton(onClick = { search.query = "" }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear search",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        AppSettingsStore.addSearchTerm(context, search.query)
+                        focusManager.clearFocus()
+                    }
+                ),
+                shape = RoundedCornerShape(24.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    // `heightIn` rather than a fixed 50 dp: at 130 %+ font scale the
+                    // field grows with its text instead of clipping it.
+                    .heightIn(min = 50.dp)
+                    .onFocusChanged { search.focused = it.isFocused }
+            )
+        }
+
+        // Quick-tap recent searches while the field is focused and empty.
+        if (search.focused && search.query.isEmpty() && searchHistory.isNotEmpty()) {
+            SearchSuggestionRow(
+                suggestions = searchHistory,
+                onSuggestionClick = { term ->
+                    search.query = term
+                    AppSettingsStore.addSearchTerm(context, term)
+                },
+                onClearHistory = { AppSettingsStore.clearSearchHistory(context) }
+            )
+        }
+
+        // Privilege banner — collects the status itself, so status changes never
+        // invalidate the screen below.
+        PrivilegeStatusHeader(
+            status = PrivilegeManager.status.collectAsStateWithLifecycle(
+                initialValue = PrivilegeManager.status.value
+            ).value,
+            onStatusClick = onStatusClick
+        )
+    }
+}
+
+@Composable
+private fun SearchTermRecorder(query: String) {
+    val context = LocalContext.current
+    LaunchedEffect(query) {
+        val term = query.trim()
+        if (term.length < 2) return@LaunchedEffect
+        delay(1_200)
+        AppSettingsStore.addSearchTerm(context, term)
     }
 }
