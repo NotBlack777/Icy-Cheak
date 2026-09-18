@@ -67,6 +67,7 @@ import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
 import com.icy.devcheckplus.ui.screens.BatteryScreen
+import com.icy.devcheckplus.ui.screens.ConsoleScreen
 import com.icy.devcheckplus.ui.screens.HardwareScreen
 import com.icy.devcheckplus.ui.screens.InstalledAppsScreen
 import com.icy.devcheckplus.ui.screens.NetworkScreen
@@ -312,6 +313,7 @@ fun MainDashboardScreen(
                         NavCategory.APPS -> InstalledAppsScreen(searchQuery = searchQuery)
                         NavCategory.LOGS -> SystemLogsScreen(searchQuery = searchQuery)
                         NavCategory.SENSORS -> SensorsScreen(searchQuery = searchQuery)
+                        NavCategory.CONSOLE -> ConsoleScreen()
                         NavCategory.SETTINGS -> SettingsScreen(onResetOnboarding = onResetOnboarding)
                     }
                 }

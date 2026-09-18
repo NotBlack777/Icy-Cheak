@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -27,5 +28,6 @@ enum class NavCategory(
     APPS("Installed Apps", Icons.Default.Apps, "System & User Packages, Permissions"),
     LOGS("System Logs", Icons.Default.ReceiptLong, "Live Logcat Viewer & Filters"),
     SENSORS("Sensors", Icons.Default.Sensors, "Live Hardware Sensors & Real-time Graphing"),
+    CONSOLE("Console", Icons.Default.Terminal, "Run commands with the active privilege"),
     SETTINGS("Settings", Icons.Default.Settings, "Privilege Mode, Lookups, About")
 }
