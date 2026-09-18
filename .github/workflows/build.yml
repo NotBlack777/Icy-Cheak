@@ -38,6 +38,19 @@ jobs:
       - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
 
+      # Android signs debug builds with a keystore it generates on first use
+      # (~/.android/debug.keystore). A fresh runner generates a *new* one for every
+      # build, and Android refuses to install an APK signed by a different key over
+      # an installed app (INSTALL_FAILED_UPDATE_INCOMPATIBLE) — so without this,
+      # "Update now" in the app could never replace a release it had installed
+      # earlier. Caching the file under a fixed key keeps every published APK on one
+      # signing identity, without committing a key or storing a secret.
+      - name: Restore Android debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
       - name: Resolve version name
         id: version
         run: |
