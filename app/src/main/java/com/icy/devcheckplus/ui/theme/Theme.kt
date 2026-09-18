@@ -9,8 +9,8 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -172,21 +172,25 @@ fun DevCheckPlusTheme(
         )
     }
 
-    // Ripple tinted with the live accent, so press feedback matches the theme
-    // instead of the platform's default grey. Material 3 components additionally
-    // pick up the accent through the colour roles above.
-    val indication = remember(colorScheme.primary) {
-        ripple(color = colorScheme.primary.copy(alpha = 0.42f))
-    }
+    // Ripple tinted with the live accent, so press feedback matches the theme instead
+    // of the platform's neutral default. material3 1.2.x (the version this Compose
+    // BOM pins) exposes no public ripple factory — `androidx.compose.material3.ripple`
+    // only exists from 1.3.0 — so the ripple from androidx.compose.material is used,
+    // which is the same implementation Modifier.clickable consumes.
+    val indication = rememberRipple(color = colorScheme.primary)
 
-    CompositionLocalProvider(
-        LocalGlassSpec provides glassSpec,
-        LocalIndication provides indication
-    ) {
+    CompositionLocalProvider(LocalGlassSpec provides glassSpec) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = DevCheckTypography,
-            content = content
-        )
+            typography = DevCheckTypography
+        ) {
+            // Provided inside MaterialTheme on purpose: Material 3 installs its own
+            // indication for its components, and an outer provider would be shadowed
+            // by it.
+            CompositionLocalProvider(
+                LocalIndication provides indication,
+                content = content
+            )
+        }
     }
 }
