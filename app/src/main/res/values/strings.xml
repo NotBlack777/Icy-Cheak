@@ -1,12 +1,30 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Icy Cheak</string>
 
-    <!-- Home screen widget -->
+    <!-- Home screen widget family -->
     <string name="widget_name">Icy Cheak Metrics</string>
     <string name="widget_title">Icy Cheak</string>
-    <string name="widget_description">Live battery, RAM and CPU frequency on your home screen.</string>
+    <string name="widget_description">Live battery, RAM and CPU — premium quick stats.</string>
     <string name="widget_battery_label">BATTERY</string>
     <string name="widget_ram_label">RAM</string>
     <string name="widget_cpu_label">CPU</string>
     <string name="widget_placeholder">—</string>
+
+    <string name="widget_compact_name">Icy Cheak Compact</string>
+    <string name="widget_compact_description">Compact battery, RAM and CPU stats.</string>
+
+    <string name="widget_battery_name">Icy Cheak Battery</string>
+    <string name="widget_battery_description">Battery percentage, charging, temperature and voltage.</string>
+
+    <string name="widget_device_name">Icy Cheak Device</string>
+    <string name="widget_device_description">Device model, Android version, RAM and storage overview.</string>
+
+    <string name="widget_performance_name">Icy Cheak Performance</string>
+    <string name="widget_performance_description">CPU frequency, RAM usage and temperature.</string>
+
+    <string name="widget_minimal_name">Icy Cheak Minimal</string>
+    <string name="widget_minimal_description">Minimal battery widget — clean and small.</string>
+
+    <string name="widget_network_name">Icy Cheak Network</string>
+    <string name="widget_network_description">Network type, Wi-Fi and connection status.</string>
 </resources>

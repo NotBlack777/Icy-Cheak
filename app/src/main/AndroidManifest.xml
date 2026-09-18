@@ -11,9 +11,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Phone state for cellular carrier / SIM info -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <!-- In-app updater: download a release APK and hand it to the package installer.
-         REQUEST_INSTALL_PACKAGES is what makes this app eligible for the per-app
-         "install unknown apps" grant the user is sent to. -->
+    <!-- In-app updater: download a release APK and hand it to the package installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Query all packages for installed apps section -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -48,33 +46,40 @@
             </intent-filter>
         </activity>
 
-        <!-- Home screen widget: battery / RAM / CPU -->
-        <receiver
-            android:name=".widget.MetricsWidgetProvider"
-            android:exported="false"
-            android:label="@string/widget_name">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
+        <!-- Widget Family — 6 polished widgets -->
+        <receiver android:name=".widget.MetricsWidgetProvider" android:exported="false" android:label="@string/widget_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info" />
+        </receiver>
+        <receiver android:name=".widget.CompactWidgetProvider" android:exported="false" android:label="@string/widget_compact_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_compact_info" />
+        </receiver>
+        <receiver android:name=".widget.BatteryWidgetProvider" android:exported="false" android:label="@string/widget_battery_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_battery_info" />
+        </receiver>
+        <receiver android:name=".widget.DeviceOverviewWidgetProvider" android:exported="false" android:label="@string/widget_device_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_device_info" />
+        </receiver>
+        <receiver android:name=".widget.PerformanceWidgetProvider" android:exported="false" android:label="@string/widget_performance_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_performance_info" />
+        </receiver>
+        <receiver android:name=".widget.MinimalWidgetProvider" android:exported="false" android:label="@string/widget_minimal_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_minimal_info" />
         </receiver>
 
-        <!-- Shares exactly one cache subdirectory (cacheDir/updates) so the
-             package installer can read a downloaded release APK. Nothing else
-             is exposed. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Shizuku provider configuration -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
@@ -84,5 +89,4 @@
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
     </application>
-
 </manifest>

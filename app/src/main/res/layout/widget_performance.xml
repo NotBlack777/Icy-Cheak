@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView android:text="Performance" android:textSize="11sp" android:textStyle="bold" android:textColor="@color/widget_text_primary" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="12dp">
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:background="@drawable/widget_cell" android:orientation="vertical" android:gravity="center" android:padding="10dp" android:layout_marginEnd="6dp">
+            <TextView android:text="CPU" android:textSize="8sp" android:textColor="@color/widget_text_secondary" android:textStyle="bold" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            <TextView android:id="@+id/perf_cpu" android:text="--" android:textSize="13sp" android:textStyle="bold" android:textColor="@color/widget_accent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp"/>
+            <TextView android:id="@+id/perf_cores" android:text="--" android:textSize="9sp" android:textColor="@color/widget_text_secondary" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:background="@drawable/widget_cell" android:orientation="vertical" android:gravity="center" android:padding="10dp" android:layout_marginEnd="6dp">
+            <TextView android:text="RAM" android:textSize="8sp" android:textColor="@color/widget_text_secondary" android:textStyle="bold" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            <TextView android:id="@+id/perf_ram" android:text="--" android:textSize="13sp" android:textStyle="bold" android:textColor="@color/widget_accent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp"/>
+            <TextView android:text="used" android:textSize="9sp" android:textColor="@color/widget_text_secondary" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:background="@drawable/widget_cell" android:orientation="vertical" android:gravity="center" android:padding="10dp">
+            <TextView android:text="TEMP" android:textSize="8sp" android:textColor="@color/widget_text_secondary" android:textStyle="bold" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            <TextView android:id="@+id/perf_temp" android:text="--" android:textSize="13sp" android:textStyle="bold" android:textColor="@color/widget_accent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp"/>
+            <TextView android:text="battery" android:textSize="9sp" android:textColor="@color/widget_text_secondary" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

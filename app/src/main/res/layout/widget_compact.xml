@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="14dp">
+
+    <ImageView android:layout_width="24dp" android:layout_height="24dp"
+        android:src="@drawable/ic_launcher_foreground"/>
+
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:layout_marginStart="12dp" android:orientation="horizontal">
+
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center">
+            <TextView android:text="BAT" android:textSize="8sp" android:textColor="@color/widget_text_secondary" android:textStyle="bold" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            <TextView android:id="@+id/compact_battery" android:text="--" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/widget_accent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp"/>
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center">
+            <TextView android:text="RAM" android:textSize="8sp" android:textColor="@color/widget_text_secondary" android:textStyle="bold" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            <TextView android:id="@+id/compact_ram" android:text="--" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/widget_accent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp"/>
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center">
+            <TextView android:text="CPU" android:textSize="8sp" android:textColor="@color/widget_text_secondary" android:textStyle="bold" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            <TextView android:id="@+id/compact_cpu" android:text="--" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/widget_accent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp"/>
+        </LinearLayout>
+
+    </LinearLayout>
+</LinearLayout>
