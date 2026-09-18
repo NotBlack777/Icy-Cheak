@@ -3,6 +3,20 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+/*
+ * CI injects the release identity so the tag on GitHub Releases, the APK and
+ * BuildConfig always agree - the in-app updater compares that tag against
+ * BuildConfig.VERSION_NAME, so a drift there means "update available" forever.
+ */
+val ciVersionName = (project.findProperty("devcheckVersionName") as String?)?.takeIf { it.isNotBlank() }
+val ciVersionCode = (project.findProperty("devcheckVersionCode") as String?)?.toIntOrNull()
+
+// Committed CI key by default; overridable per developer/secret without edits.
+val keystorePath = (project.findProperty("devcheckKeystore") as String?)?.takeIf { it.isNotBlank() }
+    ?.let { file(it) }
+    ?: rootProject.file("keystore/devcheck-ci.jks")
+val keystoreAvailable = keystorePath.exists()
+
 android {
     namespace = "com.icy.devcheckplus"
     compileSdk = 34
@@ -11,12 +25,28 @@ android {
         applicationId = "com.icy.devcheckplus"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = ciVersionCode ?: 1
+        versionName = ciVersionName ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
+        }
+    }
+
+    signingConfigs {
+        /*
+         * Release builds must keep a stable signature: Android refuses to update
+         * an install whose signing certificate changed, which would break the
+         * in-app updater. See keystore/README.md.
+         */
+        create("devcheck") {
+            if (keystoreAvailable) {
+                storeFile = keystorePath
+                storePassword = (project.findProperty("devcheckStorePassword") as String?) ?: "devcheckci"
+                keyAlias = (project.findProperty("devcheckKeyAlias") as String?) ?: "devcheck"
+                keyPassword = (project.findProperty("devcheckKeyPassword") as String?) ?: "devcheckci"
+            }
         }
     }
 
@@ -27,6 +57,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystoreAvailable) {
+                signingConfig = signingConfigs.getByName("devcheck")
+            } else {
+                logger.warn("No signing keystore at ${'$'}keystorePath - producing an unsigned release APK.")
+            }
         }
         debug {
             applicationIdSuffix = ""

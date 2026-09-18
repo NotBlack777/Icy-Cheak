@@ -26,6 +26,10 @@ render.experimental.xml
 # Keystore files
 *.jks
 *.keystore
+# Exception: the CI signing key is committed on purpose so every release APK
+# shares one signature (an install can only be updated by the same signer).
+# The password is not a secret - see keystore/README.md before replacing it.
+!keystore/devcheck-ci.jks
 
 # Google Services (e.g. APIs or Firebase)
 google-services.json

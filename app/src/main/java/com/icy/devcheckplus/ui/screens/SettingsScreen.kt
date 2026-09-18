@@ -1,5 +1,10 @@
 package com.icy.devcheckplus.ui.screens
 
+import com.icy.devcheckplus.update.UpdateState
+import com.icy.devcheckplus.update.UpdateController
+import com.icy.devcheckplus.ui.components.formatBytes
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.filled.Refresh
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -109,6 +114,7 @@ fun SettingsScreen(
     val ambientStyle by AppSettingsStore.ambientStyle.collectAsState()
     val ambientOnOled by AppSettingsStore.ambientOnOled.collectAsState()
     val reportSections by AppSettingsStore.reportSections.collectAsState()
+    val autoUpdateCheck by AppSettingsStore.autoUpdateCheck.collectAsState()
     val publicIpLookup by AppSettingsStore.publicIpLookup.collectAsState()
     var showExportDialog by remember { mutableStateOf(false) }
 
@@ -234,7 +240,13 @@ fun SettingsScreen(
                 GlassSectionHeader(title = "ABOUT", icon = Icons.Default.Info)
             }
             item(key = "card_about") {
-                AboutCard(status = privilegeStatus, themeMode = themeMode, dynamicColor = dynamicColor)
+                AboutCard(
+                    status = privilegeStatus,
+                    themeMode = themeMode,
+                    dynamicColor = dynamicColor,
+                    autoUpdateCheck = autoUpdateCheck,
+                    onAutoUpdateChange = { AppSettingsStore.setAutoUpdateCheck(context, it) }
+                )
             }
 
             item(key = "settings_footer") {
@@ -747,9 +759,14 @@ private fun GeneralCard(onResetOnboarding: () -> Unit) {
 private fun AboutCard(
     status: PrivilegeStatus,
     themeMode: ThemeMode,
-    dynamicColor: Boolean
+    dynamicColor: Boolean,
+    autoUpdateCheck: Boolean,
+    onAutoUpdateChange: (Boolean) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
+    val spec = LocalGlassSpec.current
+    val context = LocalContext.current
+    val updateState by UpdateController.state.collectAsStateWithLifecycle()
 
     GlassCard(frosted = true) {
         Row(
@@ -813,7 +830,74 @@ private fun AboutCard(
                 modifier = Modifier.weight(1f)
             )
         }
+
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 12.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+
+        GlassRow(
+            title = "Check for updates automatically",
+            icon = Icons.Default.Refresh,
+            subtitle = "On launch DevCheck+ reads this project's GitHub Releases feed and only speaks up " +
+                "when a tag is newer than v" + BuildConfig.VERSION_NAME + ".",
+            trailing = {
+                HapticSwitch(checked = autoUpdateCheck, onCheckedChange = onAutoUpdateChange)
+            }
+        )
+
+        GlassRow(
+            title = "Check now",
+            icon = Icons.Default.RestartAlt,
+            subtitle = updateSubtitle(updateState),
+            onClick = { UpdateController.check(context, manual = true) },
+            trailing = {
+                SettingsPillButton(
+                    text = updatePillLabel(updateState),
+                    onClick = { UpdateController.check(context, manual = true) }
+                )
+            }
+        )
+
+        DetailNote(
+            text = "Updates come from GitHub Releases, not from a store. Android always shows its own " +
+                "confirmation before installing, and may first ask you to allow installs from unknown " +
+                "sources - no app can update itself silently."
+        )
     }
+}
+
+/** Short badge text for the manual update check. */
+private fun updatePillLabel(state: UpdateState): String = when (state) {
+    UpdateState.Idle -> "Check"
+    UpdateState.Checking -> "Checking"
+    is UpdateState.Available -> state.release.tag
+    is UpdateState.Downloading -> "Downloading"
+    is UpdateState.ReadyToInstall -> "Install"
+    is UpdateState.NeedsInstallPermission -> "Permission"
+    is UpdateState.Failed -> "Retry"
+    is UpdateState.UpToDate -> "Up to date"
+}
+
+/** Row copy that always says what the updater actually did last. */
+private fun updateSubtitle(state: UpdateState): String = when (state) {
+    UpdateState.Idle ->
+        "Ask GitHub Releases for the newest tag and compare it with the installed build."
+    UpdateState.Checking ->
+        "Contacting GitHub Releases…"
+    is UpdateState.Available ->
+        "Version " + state.release.tag + " is available" +
+            (if (state.release.apkBytes > 0L) " (" + formatBytes(state.release.apkBytes) + ")." else ".")
+    is UpdateState.Downloading ->
+        "Downloading " + state.release.tag + "… the prompt has a cancel button."
+    is UpdateState.ReadyToInstall ->
+        state.release.tag + " is downloaded. Reopen the system installer from here if you dismissed it."
+    is UpdateState.NeedsInstallPermission ->
+        "Allow 'install unknown apps' for DevCheck+, then tap Install in the prompt."
+    is UpdateState.Failed -> state.message
+    is UpdateState.UpToDate ->
+        "Installed " + state.installedVersion + "; newest release " + state.latestTag + "."
 }
 
 @Composable

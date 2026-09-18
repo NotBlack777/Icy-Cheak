@@ -1,6 +1,5 @@
 package com.icy.devcheckplus
 
-import com.icy.devcheckplus.ui.components.rememberHapticTick
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,10 +26,10 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.FabPosition
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +70,8 @@ import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
 import com.icy.devcheckplus.ui.components.SearchSuggestionRow
+import com.icy.devcheckplus.ui.components.UpdateDialogHost
+import com.icy.devcheckplus.ui.components.rememberHapticTick
 import com.icy.devcheckplus.ui.screens.BatteryScreen
 import com.icy.devcheckplus.ui.screens.ConsoleScreen
 import com.icy.devcheckplus.ui.screens.DashboardScreen
@@ -85,6 +86,7 @@ import com.icy.devcheckplus.ui.screens.SoftwareScreen
 import com.icy.devcheckplus.ui.screens.StorageScreen
 import com.icy.devcheckplus.ui.screens.SystemLogsScreen
 import com.icy.devcheckplus.ui.theme.DevCheckPlusTheme
+import com.icy.devcheckplus.update.UpdateController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -109,7 +111,26 @@ class MainActivity : ComponentActivity() {
                 ambientStyle = ambientStyle,
                 ambientOnOled = ambientOnOled
             ) {
+                val context = LocalContext.current
+                val autoUpdateCheck by AppSettingsStore.autoUpdateCheck.collectAsState()
+
+                /*
+                 * One launch-time check against GitHub Releases. It is delayed so
+                 * it never competes with the first telemetry frame, bounded by the
+                 * controller's own timeout, and silent unless it finds something:
+                 * no network simply means no dialog. Flipping the Settings toggle
+                 * on re-runs it immediately.
+                 */
+                LaunchedEffect(autoUpdateCheck) {
+                    if (autoUpdateCheck) {
+                        delay(1_500L)
+                        UpdateController.check(context, manual = false)
+                    }
+                }
+
                 MainAppContainer()
+                // Mounted at the root so an update found on any tab can prompt.
+                UpdateDialogHost()
             }
         }
     }

@@ -11,6 +11,12 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Phone state for cellular carrier / SIM info -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!--
+      In-app updater: Android 8+ shows a per-app "install unknown apps" screen
+      before the system package installer will accept an APK. The permission is
+      only declared so that screen can be reached; nothing is installed silently.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Query all packages for installed apps section -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -56,6 +62,21 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_info" />
         </receiver>
+
+        <!--
+          Hands the downloaded update APK to the system installer as a content
+          URI. Restricted to cacheDir/updates (see res/xml/file_paths.xml) and
+          never exported; read access is granted per intent.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Shizuku provider configuration -->
         <provider

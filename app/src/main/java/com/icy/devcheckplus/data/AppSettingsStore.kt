@@ -34,6 +34,7 @@ object AppSettingsStore {
     const val KEY_AMBIENT_STYLE = "pref_ambient_style"
     const val KEY_AMBIENT_ON_OLED = "pref_ambient_on_oled"
     const val KEY_REPORT_SECTIONS = "pref_report_sections"
+    const val KEY_AUTO_UPDATE_CHECK = "pref_auto_update_check"
 
     /** Maximum number of remembered console commands. */
     private const val MAX_CONSOLE_HISTORY = 20
@@ -92,6 +93,10 @@ object AppSettingsStore {
     private val _reportSections = MutableStateFlow(ReportSection.values().toSet())
     val reportSections: StateFlow<Set<ReportSection>> = _reportSections.asStateFlow()
 
+    /** Launch-time check against GitHub Releases; default on. */
+    private val _autoUpdateCheck = MutableStateFlow(true)
+    val autoUpdateCheck: StateFlow<Boolean> = _autoUpdateCheck.asStateFlow()
+
     @Volatile
     private var initialized = false
 
@@ -119,6 +124,7 @@ object AppSettingsStore {
         _reportSections.value = ReportSection.fromMask(
             p.getLong(KEY_REPORT_SECTIONS, ReportSection.ALL_MASK)
         )
+        _autoUpdateCheck.value = p.getBoolean(KEY_AUTO_UPDATE_CHECK, true)
         initialized = true
     }
 
@@ -204,6 +210,14 @@ object AppSettingsStore {
 
     /** Snapshot for non-composable callers (the report builder). */
     fun reportSectionsNow(): Set<ReportSection> = _reportSections.value
+
+    fun setAutoUpdateCheck(context: Context, enabled: Boolean) {
+        _autoUpdateCheck.value = enabled
+        prefs(context).edit().putBoolean(KEY_AUTO_UPDATE_CHECK, enabled).apply()
+    }
+
+    /** Snapshot for the launch-time check, which runs outside composition. */
+    fun autoUpdateCheckNow(): Boolean = _autoUpdateCheck.value
 
     fun setPollInterval(context: Context, milliseconds: Long) {
         val clamped = milliseconds.coerceIn(

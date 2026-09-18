@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Shares only the directory the updater downloads into. Scoped deliberately
+  narrow: cache-path (not files-path or external-path) plus an explicit
+  subdirectory means a content URI from this provider can never point at
+  settings, history or anything else the app stores.
+-->
+<paths>
+    <cache-path
+        name="updates"
+        path="updates/" />
+</paths>
