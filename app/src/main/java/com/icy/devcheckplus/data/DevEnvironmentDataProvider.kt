@@ -120,7 +120,7 @@ object DevEnvironmentDataProvider {
         // Termux presence: check via shell, not File.isDirectory sandbox — test existence inside privilege engine
         ToolCheck(
             tool = DevTool.TERMUX,
-            command = "if [ -d $TERMUX_BIN_DIR ]; then ls $TERMUX_BIN_DIR 2>/dev/null | head -n 40; echo "__TERMUX_EXISTS__"; else echo "__TERMUX_MISSING__"; fi",
+            command = "if [ -d $TERMUX_BIN_DIR ]; then ls $TERMUX_BIN_DIR 2>/dev/null | head -n 40; echo '__TERMUX_EXISTS__'; else echo '__TERMUX_MISSING__'; fi",
             privileged = true
         )
     )
@@ -149,10 +149,8 @@ object DevEnvironmentDataProvider {
      * Instead construct PATH inside shell execution context, testing [ -d dir ] via privilege engine.
      */
     private fun withExtraPath(cmd: String): String {
-        // Space-separated list for shell for-loop — each dir tested inside shell, not via File.isDirectory
         val dirsSpaceSeparated = EXTRA_BIN_PATHS.joinToString(" ")
-        // For each candidate, if it exists in this shell's view (privileged shell can see /data/data), prepend to PATH
-        return "for d in $dirsSpaceSeparated; do [ -d \$d ] 2>/dev/null && export PATH="\$d:\$PATH" 2>/dev/null; done; $cmd"
+        return "for d in $dirsSpaceSeparated; do [ -d \$d ] 2>/dev/null && export PATH=\$d:\$PATH 2>/dev/null; done; $cmd"
     }
 
     private suspend fun runProbe(check: ToolCheck): DevToolResult {
