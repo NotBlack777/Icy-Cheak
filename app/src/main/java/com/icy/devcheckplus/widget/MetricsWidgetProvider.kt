@@ -66,7 +66,7 @@ class MetricsWidgetProvider : AppWidgetProvider() {
                 var anyPlaced = false
                 allProviders.forEach { providerClass ->
                     val ids = manager.getAppWidgetIds(ComponentName(context, providerClass))
-                    if (!ids.isNullOrEmpty()) {
+                    if (ids.isNotEmpty()) {
                         anyPlaced = true
                         val snapshot = WidgetMetrics.read(context)
                         ids.forEach { id ->

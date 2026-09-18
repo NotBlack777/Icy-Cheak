@@ -63,10 +63,10 @@ object SecurityDataProvider {
         val status = PrivilegeManager.status.value
         privilegeItems.add(InfoItem("Active Privilege Mode", status.activeMode.name))
         privilegeItems.add(InfoItem("Root Available", if (status.rootAvailable) "Yes" else "No"))
-        privilegeItems.add(InfoItem("Shizuku Available", if (status.shizukuAvailable) "Yes" else "No"))
+        privilegeItems.add(InfoItem("Shizuku Available", if (status.shizukuRunning) "Yes" else "No"))
         privilegeItems.add(InfoItem("Shizuku Running", if (status.shizukuRunning) "Yes" else "No"))
         privilegeItems.add(InfoItem("Root Granted", if (status.rootGranted) "Yes" else "No / Unknown"))
-        privilegeItems.add(InfoItem("Shizuku Permission", if (status.shizukuPermissionGranted) "Granted" else "Not granted"))
+        privilegeItems.add(InfoItem("Shizuku Permission", if (status.shizukuGranted) "Granted" else "Not granted"))
 
         try {
             val suExists = File("/system/bin/su").exists() || File("/system/xbin/su").exists() || File("/sbin/su").exists()

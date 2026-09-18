@@ -151,21 +151,23 @@ object WidgetMetrics {
         0f to 0f
     }
 
-    private fun readNetwork(context: Context): Pair<String, String?> = try {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        if (cm == null) return "Unknown" to null
-        val network = cm.activeNetwork
-        val caps = cm.getNetworkCapabilities(network)
-        if (caps == null) return "Offline" to null
-        when {
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi" to "Connected"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular" to "Connected"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet" to "Connected"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN" to "Active"
-            else -> "Connected" to null
+    private fun readNetwork(context: Context): Pair<String, String?> {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            if (cm == null) return "Unknown" to null
+            val network = cm.activeNetwork
+            val caps = cm.getNetworkCapabilities(network)
+            if (caps == null) return "Offline" to null
+            when {
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi" to "Connected"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular" to "Connected"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet" to "Connected"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN" to "Active"
+                else -> "Connected" to null
+            }
+        } catch (_: Throwable) {
+            "Unknown" to null
         }
-    } catch (_: Throwable) {
-        "Unknown" to null
     }
 
     private fun readLongFromFile(path: String): Long? = try {

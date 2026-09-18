@@ -30,7 +30,7 @@ object RecommendationsEngine {
 
         // Privilege-aware
         if (privilegeState.activeMode.name == "NONE") {
-            if (privilegeState.shizukuAvailable && !privilegeState.shizukuRunning) {
+            if (privilegeState.shizukuRunning && !privilegeState.shizukuGranted) {
                 recs.add(
                     Recommendation(
                         id = "shizuku_not_running",
@@ -40,7 +40,7 @@ object RecommendationsEngine {
                         priority = 10
                     )
                 )
-            } else if (!privilegeState.rootAvailable && !privilegeState.shizukuAvailable) {
+            } else if (!privilegeState.rootAvailable && !privilegeState.shizukuRunning) {
                 recs.add(
                     Recommendation(
                         id = "no_privilege",
