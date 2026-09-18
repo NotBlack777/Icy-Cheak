@@ -121,6 +121,10 @@ class MainActivity : ComponentActivity() {
                 .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.accent.value)
             val gradient by UserPreferencesStore.gradient
                 .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.gradient.value)
+            // Only read while the gradient style is Custom, so saving or switching a
+            // preset recomposes the theme wrapper and nothing else.
+            val customGradient by UserPreferencesStore.activeCustomGradient
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.activeCustomGradient.value)
             val backgroundAnimation by UserPreferencesStore.backgroundAnimation
                 .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.backgroundAnimation.value)
             val backgroundOverride by UserPreferencesStore.backgroundAnimationOverride
@@ -131,6 +135,7 @@ class MainActivity : ComponentActivity() {
                 dynamicColor = dynamicColor,
                 accent = accent,
                 gradientStyle = gradient,
+                customGradient = customGradient,
                 backgroundAnimation = backgroundAnimation,
                 backgroundAnimationOverride = backgroundOverride
             ) {

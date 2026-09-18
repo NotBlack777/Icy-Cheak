@@ -193,7 +193,7 @@ private fun BoxScope.GlassSurfaceLayer(
     // gradient style at the current fidelity — Solid, and a flattened surface,
     // paint a flat colour instead.
     val surfaceBrush = remember(spec.gradientStyle, scheme, surfaceAlpha, fidelity) {
-        spec.gradientStyle.surfaceBrush(scheme, surfaceAlpha, fidelity)
+        spec.gradientStyle.surfaceBrush(scheme, surfaceAlpha, fidelity, spec.customGradient)
     }
     Box(
         modifier = modifier

@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +27,9 @@ import androidx.compose.material.icons.filled.Adb
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
@@ -61,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +77,8 @@ import com.icy.devcheckplus.BuildConfig
 import com.icy.devcheckplus.data.AccentPalette
 import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.data.BackgroundAnimation
+import com.icy.devcheckplus.data.CustomGradient
+import com.icy.devcheckplus.data.GradientStyle
 import com.icy.devcheckplus.data.LiveMetricsRepository
 import com.icy.devcheckplus.data.ReportSection
 import com.icy.devcheckplus.data.SettingsSectionId
@@ -83,6 +90,7 @@ import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import com.icy.devcheckplus.privilege.PrivilegeStatus
 import com.icy.devcheckplus.ui.components.AccentGrid
+import com.icy.devcheckplus.ui.components.CustomGradientSheet
 import com.icy.devcheckplus.ui.components.AmbientBackground
 import com.icy.devcheckplus.ui.components.BackgroundAnimationGrid
 import com.icy.devcheckplus.ui.components.ExportFormatSheet
@@ -106,6 +114,7 @@ import com.icy.devcheckplus.ui.components.UpdateStatusLine
 import com.icy.devcheckplus.ui.components.WatchdogSheet
 import com.icy.devcheckplus.ui.components.rememberHapticTick
 import com.icy.devcheckplus.ui.theme.AccentGreen
+import com.icy.devcheckplus.ui.theme.gradientBrush
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
 import com.icy.devcheckplus.ui.theme.ThemeMode
@@ -538,6 +547,14 @@ private fun ColumnScope.ThemingSection() {
     val spec = LocalGlassSpec.current
     val accent by UserPreferencesStore.accent.collectAsStateWithLifecycle(initialValue = UserPreferencesStore.accent.value)
     val gradient by UserPreferencesStore.gradient.collectAsStateWithLifecycle(initialValue = UserPreferencesStore.gradient.value)
+    val customGradients by UserPreferencesStore.customGradients
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.customGradients.value)
+    val activeCustom by UserPreferencesStore.activeCustomGradient
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.activeCustomGradient.value)
+    // Editor state lives with the section: the sheet is its own window, so it can
+    // be hosted here without touching the screen above.
+    var showGradientEditor by remember { mutableStateOf(false) }
+    var editingGradient by remember { mutableStateOf<CustomGradient?>(null) }
 
     Text(
         text = "Accent colour",
@@ -594,19 +611,152 @@ private fun ColumnScope.ThemingSection() {
 
     GradientGrid(
         selected = gradient,
-        onSelect = { UserPreferencesStore.setGradient(it) }
+        onSelect = { UserPreferencesStore.setGradient(it) },
+        custom = activeCustom,
+        onCustomize = {
+            // Editing starts from the active preset when there is one, so "Custom"
+            // reopens what the user last built instead of a blank sheet.
+            editingGradient = activeCustom
+            showGradientEditor = true
+        }
     )
 
     Spacer(modifier = Modifier.height(14.dp))
 
     DetailNote(
-        text = if (spec.isOled) {
-            "OLED mode forces solid surfaces: gradients band on true-black panels and add overdraw. " +
-                "Your choice applies again in System, Light and Dark."
-        } else {
-            "Gradients are painted by the shared glass container, so every card and surface follows this."
+        text = when {
+            spec.isOled ->
+                "OLED mode forces solid surfaces: gradients band on true-black panels and add overdraw. " +
+                    "Your choice applies again in System, Light and Dark."
+            gradient == GradientStyle.CUSTOM && activeCustom != null ->
+                "\"${activeCustom!!.name}\" is painting every glass surface: ${activeCustom!!.colors.size} " +
+                    "colours, ${activeCustom!!.directionLabel}. Tap Custom to edit it."
+            gradient == GradientStyle.CUSTOM ->
+                "No custom gradient is saved yet — tap Custom to build one (2–4 colours, an angle or " +
+                    "radial spread) and it becomes the surface treatment app-wide."
+            else ->
+                "Gradients are painted by the shared glass container, so every card and surface follows this."
         }
     )
+
+    // "My gradients": every saved preset, switchable without reopening the editor.
+    if (customGradients.isNotEmpty()) {
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 14.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+
+        Text(
+            text = "My gradients",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = scheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = "${customGradients.size} saved • tap one to paint the app with it, edit to change " +
+                "it, or delete to remove it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        customGradients.forEach { saved ->
+            SavedGradientRow(
+                gradient = saved,
+                active = gradient == GradientStyle.CUSTOM && saved.id == activeCustom?.id,
+                onSelect = {
+                    UserPreferencesStore.setActiveCustomGradient(saved.id)
+                    UserPreferencesStore.setGradient(GradientStyle.CUSTOM)
+                },
+                onEdit = {
+                    editingGradient = saved
+                    showGradientEditor = true
+                },
+                onDelete = { UserPreferencesStore.deleteCustomGradient(saved.id) }
+            )
+        }
+    }
+
+    if (showGradientEditor) {
+        CustomGradientSheet(
+            initial = editingGradient,
+            onSave = { built ->
+                // Save, make it active and switch the style to Custom in one tap:
+                // building a gradient you then have to go and select would be two
+                // steps for what is obviously one intention.
+                UserPreferencesStore.saveCustomGradient(built)
+                UserPreferencesStore.setGradient(GradientStyle.CUSTOM)
+            },
+            onDismiss = { showGradientEditor = false }
+        )
+    }
+}
+
+/** One saved preset in the "My gradients" list: swatch, name, select/edit/delete. */
+@Composable
+private fun SavedGradientRow(
+    gradient: CustomGradient,
+    active: Boolean,
+    onSelect: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val brush = remember(gradient) { gradient.gradientBrush(gradient.colors.map { Color(it) }) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onSelect() }
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(brush)
+                .border(
+                    width = if (active) 2.dp else 1.dp,
+                    color = if (active) scheme.primary else scheme.outline.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(13.dp)
+                )
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = gradient.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (active) scheme.primary else scheme.onSurface
+            )
+            Text(
+                text = "${gradient.colors.size} colours • ${gradient.directionLabel}" +
+                    if (active) " • Active" else "",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onEdit) {
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = "Edit ${gradient.name}",
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "Delete ${gradient.name}",
+                tint = scheme.error,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */

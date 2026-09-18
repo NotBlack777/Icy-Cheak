@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.AccentPalette
 import com.icy.devcheckplus.data.BackgroundAnimation
+import com.icy.devcheckplus.data.CustomGradient
 import com.icy.devcheckplus.data.ExportFormatPreference
 import com.icy.devcheckplus.data.GradientStyle
 import com.icy.devcheckplus.data.RefreshRate
@@ -56,6 +57,7 @@ import com.icy.devcheckplus.data.ReportSection
 import com.icy.devcheckplus.data.WatchdogTimeout
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.ui.theme.contentColorOn
+import com.icy.devcheckplus.ui.theme.gradientBrush
 import kotlin.math.sin
 
 /**
@@ -417,18 +419,23 @@ private fun BoxScope.AccentSwatchPreview(palette: AccentPalette) {
 @Composable
 fun GradientGrid(
     selected: GradientStyle,
-    onSelect: (GradientStyle) -> Unit
+    onSelect: (GradientStyle) -> Unit,
+    custom: CustomGradient? = null,
+    onCustomize: () -> Unit = {}
 ) {
     val scheme = MaterialTheme.colorScheme
     val styles = remember { GradientStyle.values().toList() }
     TileGrid(items = styles, columns = 2, spacing = 10.dp, aspectRatio = 1f) { tileModifier, style ->
+        val isCustom = style == GradientStyle.CUSTOM
         SelectableTile(
             selected = style == selected,
-            onClick = { onSelect(style) },
+            // The Custom tile opens the editor: picking it without a saved preset
+            // would paint nothing new, and editing is how one gets made.
+            onClick = { if (isCustom) onCustomize() else onSelect(style) },
             modifier = tileModifier,
             label = style.label,
-            supporting = style.tagline,
-            preview = { GradientStylePreview(style = style, scheme = scheme) }
+            supporting = if (isCustom && custom != null) custom.name else style.tagline,
+            preview = { GradientStylePreview(style = style, scheme = scheme, custom = custom) }
         )
     }
 }
@@ -436,10 +443,24 @@ fun GradientGrid(
 @Composable
 private fun BoxScope.GradientStylePreview(
     style: GradientStyle,
-    scheme: androidx.compose.material3.ColorScheme
+    scheme: androidx.compose.material3.ColorScheme,
+    custom: CustomGradient? = null
 ) {
     val surface = scheme.surface
     val brush: Brush = when (style) {
+        // The user's own gradient, painted by the same angle-aware brush the app
+        // uses; a rainbow stand-in until one is saved.
+        GradientStyle.CUSTOM -> custom?.gradientBrush(custom.colors.map { Color(it) })
+            ?: Brush.linearGradient(
+                listOf(
+                    Color(0xFFFF6FA5),
+                    Color(0xFFFFB020),
+                    Color(0xFF2EE6C5),
+                    Color(0xFF4C8DFF),
+                    Color(0xFF9D7BFF)
+                )
+            )
+
         GradientStyle.DEFAULT -> Brush.verticalGradient(
             listOf(scheme.primary.copy(alpha = 0.28f), surface)
         )

@@ -74,8 +74,8 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
     // the user's gradient style, so "Solid" also flattens the backdrop. It is
     // deliberately *not* faded with the scroll fidelity — repainting the whole
     // screen per frame to remove a static wash would cost more than it saves.
-    val baseBrush = remember(scheme, spec.gradientStyle, spec.isOled) {
-        spec.gradientStyle.ambientBrush(scheme, spec.isOled)
+    val baseBrush = remember(scheme, spec.gradientStyle, spec.customGradient, spec.isOled) {
+        spec.gradientStyle.ambientBrush(scheme, spec.isOled, custom = spec.customGradient)
     }
 
     val style = spec.ambientStyle

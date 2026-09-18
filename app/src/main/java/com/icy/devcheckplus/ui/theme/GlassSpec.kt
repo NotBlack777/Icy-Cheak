@@ -5,6 +5,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.BackgroundAnimation
+import com.icy.devcheckplus.data.CustomGradient
 import com.icy.devcheckplus.data.GradientStyle
 import kotlin.math.roundToInt
 
@@ -40,6 +41,13 @@ data class GlassSpec(
     val particleCount: Int = 0,
     /** Surface gradient treatment (forced to [GradientStyle.SOLID] in OLED). */
     val gradientStyle: GradientStyle = GradientStyle.DEFAULT,
+    /**
+     * The saved preset that [GradientStyle.CUSTOM] paints, or `null` while the user
+     * has not saved one. Carried on the spec so every surface reads it from the one
+     * place the rest of the glass budget comes from — no brush call site has to go
+     * looking in the preference store.
+     */
+    val customGradient: CustomGradient? = null,
     /** Soft glow around chart strokes / selected tiles. */
     val glow: Boolean = true
 ) {
@@ -120,7 +128,8 @@ fun glassSpecFor(
     themeMode: ThemeMode,
     isDark: Boolean,
     ambientStyle: BackgroundAnimation,
-    gradientStyle: GradientStyle
+    gradientStyle: GradientStyle,
+    customGradient: CustomGradient? = null
 ): GlassSpec {
     val base = when {
         themeMode == ThemeMode.OLED -> GlassSpec.Oled
@@ -147,7 +156,8 @@ fun glassSpecFor(
         },
         // Gradients are disabled on OLED for contrast (near-black panels show
         // banding) and for overdraw; the user's choice applies to the other modes.
-        gradientStyle = if (oled) GradientStyle.SOLID else gradientStyle
+        gradientStyle = if (oled) GradientStyle.SOLID else gradientStyle,
+        customGradient = customGradient
     )
 }
 

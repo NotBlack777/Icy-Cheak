@@ -127,11 +127,102 @@ enum class GradientStyle(val label: String, val tagline: String) {
     SOLID("Solid", "Flat, no gradient"),
     OCEAN("Ocean", "Cyan → deep blue"),
     SUNSET("Sunset", "Amber → magenta"),
-    VOID("Void", "Violet → black");
+    VOID("Void", "Violet → black"),
+    /** Painted from [CustomGradient]: the user's own colours, angle or radius. */
+    CUSTOM("Custom", "Your colours, your angle");
 
     companion object {
         fun fromKey(raw: String?): GradientStyle =
             values().firstOrNull { it.name.equals(raw?.trim(), ignoreCase = true) } ?: DEFAULT
+    }
+}
+
+/**
+ * A gradient the user built themselves (Settings › Colors & Theming › Custom).
+ *
+ * Colours are ARGB `Long`s so this stays a plain data-layer type — `ui/theme`
+ * turns them into `Color`s the same way it does for [AccentPalette.seed].
+ *
+ * [angleDegrees] is a CSS-style direction for the linear case: 0° runs left →
+ * right, 90° top → bottom, 135° is the classic corner-to-corner diagonal.
+ * [radial] ignores the angle and radiates from the centre of whatever it paints.
+ *
+ * There is deliberately no `require` in here: a corrupt or truncated record in
+ * DataStore must degrade to a fallback gradient, never crash the theme at start.
+ */
+data class CustomGradient(
+    val id: String,
+    val name: String,
+    val colors: List<Long>,
+    val angleDegrees: Int = 135,
+    val radial: Boolean = false
+) {
+    /** Human-readable direction, used by the picker and the preset list. */
+    val directionLabel: String
+        get() = if (radial) "Radial" else "$angleDegrees°"
+
+    /**
+     * One record of the stored list: `id~name~angle~radial~#AARRGGBB,#AARRGGBB`.
+     * Names are sanitised first so a stray separator can never split a record.
+     */
+    fun serialize(): String = listOf(
+        id,
+        sanitizeName(name),
+        angleDegrees.coerceIn(0, 359).toString(),
+        if (radial) "1" else "0",
+        colors.take(MAX_STOPS).joinToString(COLOR_SEPARATOR) { "%08X".format(it and 0xFFFFFFFFL) }
+    ).joinToString(FIELD_SEPARATOR.toString())
+
+    companion object {
+        const val MIN_STOPS = 2
+        const val MAX_STOPS = 4
+
+        /** A sensible starting point: the theme's own cyan → violet diagonal. */
+        val STARTER = CustomGradient(
+            id = "starter",
+            name = "My gradient",
+            colors = listOf(0xFF00D2FF, 0xFF9D7BFF),
+            angleDegrees = 135,
+            radial = false
+        )
+
+        private const val FIELD_SEPARATOR = '~'
+        private const val RECORD_SEPARATOR = ';'
+        private const val COLOR_SEPARATOR = ','
+
+        /** Characters that would corrupt a record, replaced with a space. */
+        fun sanitizeName(raw: String): String = raw
+            .map { c -> if (c == FIELD_SEPARATOR || c == RECORD_SEPARATOR || c == COLOR_SEPARATOR || c == '\n' || c == '\r') ' ' else c }
+            .joinToString("")
+            .trim()
+            .take(28)
+
+        fun parse(record: String?): CustomGradient? {
+            val parts = record?.split(FIELD_SEPARATOR) ?: return null
+            if (parts.size < 5) return null
+            val id = parts[0].trim()
+            if (id.isEmpty()) return null
+            val colors = parts[4].split(COLOR_SEPARATOR).mapNotNull { token ->
+                token.trim().removePrefix("#").toLongOrNull(16)?.let { it and 0xFFFFFFFFL }
+            }
+            if (colors.size < MIN_STOPS) return null
+            return CustomGradient(
+                id = id,
+                name = sanitizeName(parts[1]).ifEmpty { "Gradient" },
+                colors = colors.take(MAX_STOPS),
+                angleDegrees = (parts[2].toIntOrNull() ?: STARTER.angleDegrees).coerceIn(0, 359),
+                radial = parts[3] == "1"
+            )
+        }
+
+        fun parseList(raw: String?): List<CustomGradient> =
+            raw.orEmpty().split(RECORD_SEPARATOR).mapNotNull { parse(it) }
+
+        fun serializeList(gradients: List<CustomGradient>): String =
+            gradients.joinToString(RECORD_SEPARATOR.toString()) { it.serialize() }
+
+        /** Unique enough for a hand-saved preset, and stable across a rename. */
+        fun newId(): String = "g" + System.currentTimeMillis().toString(36) + (100..999).random()
     }
 }
 
@@ -357,9 +448,22 @@ data class UserPreferences(
     val exportFormatPreference: ExportFormatPreference = ExportFormatPreference.DEFAULT,
     /** Adds a Console shortcut to the top bar (Settings › Advanced). */
     val consoleQuickAccess: Boolean = false,
+    /** Gradients the user has saved, most recently saved first. */
+    val customGradients: List<CustomGradient> = emptyList(),
+    /** Which of [customGradients] [GradientStyle.CUSTOM] paints. */
+    val activeCustomGradientId: String? = null,
     val hiddenSettingsSections: Set<SettingsSectionId> = emptySet(),
     val settingsSectionOrder: List<SettingsSectionId> = SettingsSectionId.DEFAULT_ORDER
 ) {
+    /**
+     * The gradient [GradientStyle.CUSTOM] paints right now: the selected one, or
+     * the newest saved one if the selection points at a preset that was deleted.
+     * `null` only while the user has never saved one — the theme then falls back
+     * to [GradientStyle.DEFAULT] instead of painting nothing.
+     */
+    val activeCustomGradient: CustomGradient?
+        get() = customGradients.firstOrNull { it.id == activeCustomGradientId } ?: customGradients.firstOrNull()
+
     /** Live telemetry cadence in milliseconds — the refresh rate, kept as a
      *  property so existing callers (labels, the ticker) stay unchanged. */
     val pollIntervalMs: Long get() = refreshRate.intervalMs
@@ -405,6 +509,8 @@ object UserPreferencesStore {
     private const val KEY_WATCHDOG = "watchdog_timeout"
     private const val KEY_EXPORT_FORMAT = "export_format_preference"
     private const val KEY_CONSOLE_SHORTCUT = "console_quick_access"
+    private const val KEY_CUSTOM_GRADIENTS = "custom_gradients"
+    private const val KEY_ACTIVE_CUSTOM_GRADIENT = "active_custom_gradient"
     private const val KEY_HIDDEN_SECTIONS = "settings_hidden_sections"
     private const val KEY_SECTION_ORDER = "settings_section_order"
 
@@ -435,6 +541,10 @@ object UserPreferencesStore {
     val watchdogTimeout: StateFlow<WatchdogTimeout> = derive { it.watchdogTimeout }
     val exportFormatPreference: StateFlow<ExportFormatPreference> = derive { it.exportFormatPreference }
     val consoleQuickAccess: StateFlow<Boolean> = derive { it.consoleQuickAccess }
+    /** Saved "My Gradients" presets, newest first. */
+    val customGradients: StateFlow<List<CustomGradient>> = derive { it.customGradients }
+    /** The preset [gradient] == CUSTOM paints; `null` until one is saved. */
+    val activeCustomGradient: StateFlow<CustomGradient?> = derive { it.activeCustomGradient }
     val hiddenSettingsSections: StateFlow<Set<SettingsSectionId>> = derive { it.hiddenSettingsSections }
     val settingsSectionOrder: StateFlow<List<SettingsSectionId>> = derive { it.settingsSectionOrder }
 
@@ -488,6 +598,8 @@ object UserPreferencesStore {
             watchdogTimeout = WatchdogTimeout.fromKey(prefs[stringPreferencesKey(KEY_WATCHDOG)]),
             exportFormatPreference = ExportFormatPreference.fromKey(prefs[stringPreferencesKey(KEY_EXPORT_FORMAT)]),
             consoleQuickAccess = prefs[booleanPreferencesKey(KEY_CONSOLE_SHORTCUT)] ?: false,
+            customGradients = CustomGradient.parseList(prefs[stringPreferencesKey(KEY_CUSTOM_GRADIENTS)]),
+            activeCustomGradientId = prefs[stringPreferencesKey(KEY_ACTIVE_CUSTOM_GRADIENT)]?.takeIf { it.isNotBlank() },
             hiddenSettingsSections = prefs[stringSetPreferencesKey(KEY_HIDDEN_SECTIONS)]
                 .orEmpty()
                 .mapNotNull { key -> SettingsSectionId.values().firstOrNull { it.name == key } }
@@ -585,6 +697,72 @@ object UserPreferencesStore {
     fun setConsoleQuickAccess(enabled: Boolean) {
         update { it.copy(consoleQuickAccess = enabled) }
         persist { prefs -> prefs[booleanPreferencesKey(KEY_CONSOLE_SHORTCUT)] = enabled }
+    }
+
+    /**
+     * Saves a gradient into "My Gradients": an existing id is replaced in place (a
+     * rename or an edit of the active preset), a new one is prepended so the newest
+     * is first, and saving also makes it the active custom gradient.
+     */
+    fun saveCustomGradient(gradient: CustomGradient) {
+        update { current ->
+            val others = current.customGradients.filterNot { it.id == gradient.id }
+            current.copy(
+                customGradients = listOf(gradient) + others,
+                activeCustomGradientId = gradient.id
+            )
+        }
+        persistCustomGradients()
+    }
+
+    /**
+     * Switches which saved preset the Custom style paints without editing it.
+     * `null` falls back to the newest one.
+     */
+    fun setActiveCustomGradient(id: String?) {
+        update { it.copy(activeCustomGradientId = id) }
+        persist { prefs ->
+            if (id == null) {
+                prefs.remove(stringPreferencesKey(KEY_ACTIVE_CUSTOM_GRADIENT))
+            } else {
+                prefs[stringPreferencesKey(KEY_ACTIVE_CUSTOM_GRADIENT)] = id
+            }
+        }
+    }
+
+    /**
+     * Deletes a saved preset. If it was the active one the selection falls back to
+     * the newest survivor (or to `null`, which makes Custom paint the default
+     * glass tint until another preset is saved).
+     */
+    fun deleteCustomGradient(id: String) {
+        update { current ->
+            val remaining = current.customGradients.filterNot { it.id == id }
+            current.copy(
+                customGradients = remaining,
+                activeCustomGradientId = if (current.activeCustomGradientId == id) {
+                    remaining.firstOrNull()?.id
+                } else {
+                    current.activeCustomGradientId
+                }
+            )
+        }
+        persistCustomGradients()
+    }
+
+    /** Writes both custom-gradient keys from the in-memory mirror. */
+    private fun persistCustomGradients() {
+        val snapshot = _preferences.value
+        val gradients = snapshot.customGradients
+        val active = snapshot.activeCustomGradientId
+        persist { prefs ->
+            prefs[stringPreferencesKey(KEY_CUSTOM_GRADIENTS)] = CustomGradient.serializeList(gradients)
+            if (active == null) {
+                prefs.remove(stringPreferencesKey(KEY_ACTIVE_CUSTOM_GRADIENT))
+            } else {
+                prefs[stringPreferencesKey(KEY_ACTIVE_CUSTOM_GRADIENT)] = active
+            }
+        }
     }
 
     /**
