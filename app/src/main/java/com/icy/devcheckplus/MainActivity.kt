@@ -68,6 +68,7 @@ import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
 import com.icy.devcheckplus.ui.screens.BatteryScreen
 import com.icy.devcheckplus.ui.screens.ConsoleScreen
+import com.icy.devcheckplus.ui.screens.DashboardScreen
 import com.icy.devcheckplus.ui.screens.HardwareScreen
 import com.icy.devcheckplus.ui.screens.InstalledAppsScreen
 import com.icy.devcheckplus.ui.screens.NetworkScreen
@@ -123,7 +124,7 @@ fun MainDashboardScreen(
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    var currentCategory by remember { mutableStateOf(NavCategory.HARDWARE) }
+    var currentCategory by remember { mutableStateOf(NavCategory.DASHBOARD) }
     var searchQuery by remember { mutableStateOf("") }
     var showExportDialog by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -304,6 +305,7 @@ fun MainDashboardScreen(
                     label = "CategoryTransition"
                 ) { category ->
                     when (category) {
+                        NavCategory.DASHBOARD -> DashboardScreen(searchQuery = searchQuery)
                         NavCategory.HARDWARE -> HardwareScreen(searchQuery = searchQuery)
                         NavCategory.SOFTWARE -> SoftwareScreen(searchQuery = searchQuery)
                         NavCategory.BATTERY -> BatteryScreen(searchQuery = searchQuery)

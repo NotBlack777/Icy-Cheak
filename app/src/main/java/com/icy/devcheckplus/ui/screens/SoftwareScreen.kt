@@ -1,5 +1,6 @@
 package com.icy.devcheckplus.ui.screens
 
+import com.icy.devcheckplus.data.PinnableCategory
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -69,7 +70,7 @@ fun SoftwareScreen(
         } else {
             LazyColumn(modifier = modifier.fillMaxSize()) {
                 items(filteredSections) { sec ->
-                    InfoSectionCard(section = sec)
+                    InfoSectionCard(section = sec, category = PinnableCategory.SOFTWARE)
                 }
                 item {
                     Spacer(modifier = Modifier.height(24.dp))

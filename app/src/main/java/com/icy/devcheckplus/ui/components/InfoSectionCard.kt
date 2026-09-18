@@ -36,6 +36,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.icy.devcheckplus.data.PinnableCategory
+import com.icy.devcheckplus.data.PinnedItemKey
 import com.icy.devcheckplus.model.InfoItem
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.theme.AccentOrange
@@ -53,7 +55,8 @@ import com.icy.devcheckplus.ui.theme.LocalGlassSpec
 fun InfoSectionCard(
     section: InfoSection,
     modifier: Modifier = Modifier,
-    initiallyExpanded: Boolean = true
+    initiallyExpanded: Boolean = true,
+    category: PinnableCategory? = null
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
     val spec = LocalGlassSpec.current
@@ -100,7 +103,7 @@ fun InfoSectionCard(
                     .padding(bottom = 12.dp)
             ) {
                 section.items.forEachIndexed { index, item ->
-                    InfoRowItem(item = item)
+                    InfoRowItem(item = item, category = category, sectionTitle = section.title)
                     if (index < section.items.lastIndex) {
                         HorizontalDivider(
                             modifier = Modifier.padding(vertical = 8.dp),
@@ -115,7 +118,11 @@ fun InfoSectionCard(
 }
 
 @Composable
-fun InfoRowItem(item: InfoItem) {
+fun InfoRowItem(
+    item: InfoItem,
+    category: PinnableCategory? = null,
+    sectionTitle: String? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -159,6 +166,15 @@ fun InfoRowItem(item: InfoItem) {
                 Spacer(modifier = Modifier.height(2.dp))
                 PrivilegeBadge(source = item.privilegeSource)
             }
+        }
+
+        // Pin affordance: rendered only where the caller declares a category.
+        if (category != null && sectionTitle != null) {
+            PinToggleButton(
+                pin = PinnedItemKey(category, sectionTitle, item.title),
+                modifier = Modifier.padding(start = 4.dp),
+                itemLabel = item.title
+            )
         }
     }
 }

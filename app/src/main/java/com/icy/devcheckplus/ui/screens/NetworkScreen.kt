@@ -1,5 +1,6 @@
 package com.icy.devcheckplus.ui.screens
 
+import com.icy.devcheckplus.data.PinnableCategory
 import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -71,7 +72,7 @@ fun NetworkScreen(
         } else {
             LazyColumn(modifier = modifier.fillMaxSize()) {
                 items(filteredSections) { sec ->
-                    InfoSectionCard(section = sec)
+                    InfoSectionCard(section = sec, category = PinnableCategory.NETWORK)
                 }
                 item {
                     Spacer(modifier = Modifier.height(24.dp))

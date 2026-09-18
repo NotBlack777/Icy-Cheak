@@ -1,5 +1,6 @@
 package com.icy.devcheckplus.ui.screens
 
+import com.icy.devcheckplus.data.PinnableCategory
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -103,7 +104,7 @@ fun HardwareScreen(
                     }
                 }
                 items(filteredSections, key = { it.title }) { sec ->
-                    InfoSectionCard(section = sec)
+                    InfoSectionCard(section = sec, category = PinnableCategory.HARDWARE)
                 }
                 item(key = "hardware_bottom_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
