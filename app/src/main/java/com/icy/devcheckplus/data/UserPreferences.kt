@@ -94,7 +94,15 @@ enum class ReportSection(val id: String, val label: String) {
     }
 }
 
-/** Settings sections the user can reorder or hide (see Part 4 organizer). */
+/**
+ * Settings sections, in their default order.
+ *
+ * The list is data, not code: Settings renders whatever order is stored (see
+ * [UserPreferencesStore.settingsSectionOrder]) and hides whatever the organizer has
+ * switched off, so reordering or hiding a section never touches the screen's own
+ * layout code. [fromKeys] keeps a stored order usable when a new section appears
+ * in a later release.
+ */
 enum class SettingsSectionId(val title: String) {
     APPEARANCE("APPEARANCE"),
     THEMING("COLORS & THEMING"),
@@ -102,6 +110,7 @@ enum class SettingsSectionId(val title: String) {
     PRIVILEGE("PRIVILEGE ENGINE"),
     PRIVACY("PRIVACY & NETWORK"),
     GENERAL("GENERAL"),
+    UPDATES("UPDATES"),
     EXPORT("EXPORT & SHARE"),
     ABOUT("ABOUT");
 

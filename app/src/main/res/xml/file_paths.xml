@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider paths for the in-app updater.
+
+  Exactly one directory is shared: `cacheDir/updates`. Release APKs are written
+  there by ApkUpdateInstaller and handed to the system package installer through
+  a temporary read grant. No internal data, no reports, no other cache content is
+  reachable through this provider.
+-->
+<paths>
+    <cache-path
+        name="updates"
+        path="updates/" />
+</paths>

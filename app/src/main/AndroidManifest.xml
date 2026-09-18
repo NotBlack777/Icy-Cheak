@@ -11,6 +11,10 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Phone state for cellular carrier / SIM info -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- In-app updater: download a release APK and hand it to the package installer.
+         REQUEST_INSTALL_PACKAGES is what makes this app eligible for the per-app
+         "install unknown apps" grant the user is sent to. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Query all packages for installed apps section -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -56,6 +60,19 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_info" />
         </receiver>
+
+        <!-- Shares exactly one cache subdirectory (cacheDir/updates) so the
+             package installer can read a downloaded release APK. Nothing else
+             is exposed. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Shizuku provider configuration -->
         <provider

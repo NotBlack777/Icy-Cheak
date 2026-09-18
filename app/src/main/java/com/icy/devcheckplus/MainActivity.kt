@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.AppSettingsStore
+import com.icy.devcheckplus.data.UpdateRepository
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.navigation.NavCategory
 import com.icy.devcheckplus.privilege.PrivilegeManager
@@ -72,7 +73,9 @@ import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
 import com.icy.devcheckplus.ui.components.ScrollActivityProvider
 import com.icy.devcheckplus.ui.components.SearchSuggestionRow
+import com.icy.devcheckplus.ui.components.UpdateDialogHost
 import com.icy.devcheckplus.ui.components.rememberHapticTick
+import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.screens.BatteryScreen
 import com.icy.devcheckplus.ui.screens.ConsoleScreen
 import com.icy.devcheckplus.ui.screens.DashboardScreen
@@ -136,20 +139,40 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppContainer() {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     var showOnboarding by remember {
         mutableStateOf(!PrivilegeManager.isOnboardingCompleted(context))
     }
 
-    if (showOnboarding) {
-        OnboardingScreen(onFinished = {
-            showOnboarding = false
-        })
-    } else {
-        MainDashboardScreen(onResetOnboarding = {
-            PrivilegeManager.setOnboardingCompleted(context, false)
-            showOnboarding = true
-        })
+    // Launch-time update check. Gated three ways so it can never cost anything
+    // noticeable: the user's toggle, the foreground state, and the repository's
+    // 6-hour throttle (typing/rotating does not re-trigger it). A failure — offline,
+    // API unreachable — resolves to a non-blocking status, never an exception.
+    val autoUpdateCheck by UserPreferencesStore.autoUpdateCheck
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.autoUpdateCheck.value)
+    val foreground = rememberIsForeground()
+    LaunchedEffect(autoUpdateCheck, foreground) {
+        if (autoUpdateCheck && foreground) {
+            UpdateRepository.check(context, automatic = true)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (showOnboarding) {
+            OnboardingScreen(onFinished = {
+                showOnboarding = false
+            })
+        } else {
+            MainDashboardScreen(onResetOnboarding = {
+                PrivilegeManager.setOnboardingCompleted(context, false)
+                showOnboarding = true
+            })
+        }
+
+        // Single host: a manual check from Settings and the launch check both
+        // surface here, and a download keeps running across navigation because the
+        // state lives in UpdateRepository, not in the dialog.
+        UpdateDialogHost()
     }
 }
 

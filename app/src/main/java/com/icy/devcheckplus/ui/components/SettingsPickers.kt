@@ -64,30 +64,38 @@ fun PillAction(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    contentDescription: String? = null
+    contentDescription: String? = null,
+    enabled: Boolean = true
 ) {
     val scheme = MaterialTheme.colorScheme
     val tick = rememberHapticTick()
+    val alpha = if (enabled) 1f else 0.45f
     Box(
         modifier = modifier
+            // 48 dp touch target even though the pill itself is ~24 dp tall: the
+            // padding around it is part of the clickable area.
             .heightIn(min = 48.dp)
             .widthIn(min = 48.dp)
             .clip(RoundedCornerShape(percent = 50))
-            .clickable(role = Role.Button, onClickLabel = contentDescription) { tick(); onClick() }
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClickLabel = contentDescription
+            ) { tick(); onClick() }
             .padding(vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(percent = 50))
-                .background(scheme.primary.copy(alpha = 0.14f))
+                .background(scheme.primary.copy(alpha = 0.14f * alpha))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text(
                 text = text,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = scheme.primary
+                color = scheme.primary.copy(alpha = alpha)
             )
         }
     }

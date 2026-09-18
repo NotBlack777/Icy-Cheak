@@ -3,6 +3,23 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+/*
+ * Version single source of truth.
+ *
+ * CI (GitHub Actions) sets GITHUB_RUN_NUMBER, so every published release gets a
+ * strictly increasing versionCode and a matching versionName — which is also what
+ * the in-app updater compares the release tag against. Local builds keep the
+ * plain "1.0.0"/1 defaults, and `-PappVersionName=` / `-PappVersionCode=` can
+ * override both for a one-off build.
+ */
+val ciRunNumber: Int? = System.getenv("GITHUB_RUN_NUMBER")?.trim()?.toIntOrNull()
+val baseVersionName: String = (project.findProperty("appVersionName") as String?)
+    ?: ciRunNumber?.let { "1.0.$it" }
+    ?: "1.0.0"
+val resolvedVersionCode: Int = (project.findProperty("appVersionCode") as String?)?.toIntOrNull()
+    ?: ciRunNumber?.let { 1 + it }
+    ?: 1
+
 android {
     namespace = "com.icy.devcheckplus"
     compileSdk = 34
@@ -11,8 +28,8 @@ android {
         applicationId = "com.icy.devcheckplus"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = resolvedVersionCode
+        versionName = baseVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

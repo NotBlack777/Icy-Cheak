@@ -1,5 +1,7 @@
 package com.icy.devcheckplus.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Wallpaper
@@ -64,6 +67,9 @@ import com.icy.devcheckplus.data.BackgroundAnimation
 import com.icy.devcheckplus.data.LiveMetricsRepository
 import com.icy.devcheckplus.data.ReportSection
 import com.icy.devcheckplus.data.SettingsSectionId
+import com.icy.devcheckplus.data.UpdateCheckState
+import com.icy.devcheckplus.data.UpdateChecker
+import com.icy.devcheckplus.data.UpdateRepository
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
@@ -85,6 +91,7 @@ import com.icy.devcheckplus.ui.components.ThemeModePreview
 import com.icy.devcheckplus.ui.components.TileGrid
 import com.icy.devcheckplus.ui.components.TileIconPreview
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.components.UpdateStatusLine
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
@@ -161,6 +168,7 @@ fun SettingsScreen(
                             onExport = { showExportDialog = true },
                             onSectionsClick = { showReportSectionsSheet = true }
                         )
+                        SettingsSectionId.UPDATES -> UpdatesCard()
                         SettingsSectionId.ABOUT -> AboutCard()
                     }
                 }
@@ -260,6 +268,7 @@ private fun SettingsSectionId.icon(): ImageVector = when (this) {
     SettingsSectionId.PRIVILEGE -> Icons.Default.Lock
     SettingsSectionId.PRIVACY -> Icons.Default.Public
     SettingsSectionId.GENERAL -> Icons.Default.Tune
+    SettingsSectionId.UPDATES -> Icons.Default.SystemUpdate
     SettingsSectionId.EXPORT -> Icons.Default.Share
     SettingsSectionId.ABOUT -> Icons.Default.Info
 }
@@ -735,6 +744,100 @@ private fun PrivilegeCard() {
         DetailNote(
             text = modeEntries.firstOrNull { it.mode == status.preferredMode }?.detail
                 ?: modeEntries[0].detail
+        )
+    }
+}
+
+
+/* ------------------------------------------------------------------ */
+/*  Updates                                                            */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun UpdatesCard() {
+    val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
+    val spec = LocalGlassSpec.current
+    val checkState by UpdateRepository.checkState.collectAsStateWithLifecycle()
+    val autoCheck by UserPreferencesStore.autoUpdateCheck
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.autoUpdateCheck.value)
+
+    GlassCard(frosted = true) {
+        GlassRow(
+            title = "Check for updates",
+            icon = Icons.Default.SystemUpdate,
+            subtitle = "Reads the latest release from GitHub Releases — no account, no token. " +
+                "Currently on v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}).",
+            onClick = { UpdateRepository.check(context) },
+            trailing = {
+                PillAction(
+                    text = if (checkState is UpdateCheckState.Checking) "Checking…" else "Check now",
+                    onClick = { UpdateRepository.check(context) },
+                    contentDescription = "Check GitHub Releases for a newer build",
+                    enabled = checkState !is UpdateCheckState.Checking
+                )
+            }
+        )
+
+        UpdateStatusLine(
+            checkState = checkState,
+            modifier = Modifier.padding(top = 10.dp)
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 10.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+
+        GlassRow(
+            title = "Check automatically",
+            icon = Icons.Default.RestartAlt,
+            subtitle = "One check per app launch at most (throttled to every 6 hours). A manual " +
+                "check above always runs.",
+            trailing = {
+                HapticSwitch(
+                    checked = autoCheck,
+                    onCheckedChange = { UserPreferencesStore.setAutoUpdateCheck(it) }
+                )
+            }
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 10.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+
+        GlassRow(
+            title = "Release page",
+            icon = Icons.Default.Public,
+            subtitle = "Open the releases in a browser to download an APK manually.",
+            onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(UpdateChecker.RELEASES_PAGE_URL))
+                    )
+                }
+            },
+            trailing = {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = scheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        DetailNote(
+            text = "Android requires a confirmation tap for every install — no app can update " +
+                "itself silently without root or device-owner privileges, and this app does not " +
+                "request them for updates. \"Update now\" downloads the APK and opens the system " +
+                "installer; if it is your first time, Android asks you to allow \"install unknown " +
+                "apps\" for DevCheck+ first."
         )
     }
 }
