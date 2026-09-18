@@ -88,6 +88,7 @@ import com.icy.devcheckplus.data.SettingsSectionId
 import com.icy.devcheckplus.data.UpdateCheckState
 import com.icy.devcheckplus.data.UpdateChecker
 import com.icy.devcheckplus.data.UpdateRepository
+import com.icy.devcheckplus.data.UpdateViewModel
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
@@ -116,6 +117,7 @@ import com.icy.devcheckplus.ui.components.TileGrid
 import com.icy.devcheckplus.ui.components.TileIconPreview
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.displayIcon
+import com.icy.devcheckplus.ui.components.UpdatePendingDot
 import com.icy.devcheckplus.ui.components.UpdateStatusLine
 import com.icy.devcheckplus.ui.components.WatchdogSheet
 import com.icy.devcheckplus.ui.components.rememberHapticTick
@@ -970,9 +972,15 @@ private fun ColumnScope.UpdatesSection() {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
-    val checkState by UpdateRepository.checkState.collectAsStateWithLifecycle()
+    val updateViewModel: UpdateViewModel = androidx.lifecycle.viewmodel.compose.viewModel(factory = UpdateViewModel.Factory)
+    val checkState by updateViewModel.checkState.collectAsStateWithLifecycle()
+    val dialogDismissed by updateViewModel.dialogDismissed.collectAsStateWithLifecycle()
     val autoCheck by UserPreferencesStore.autoUpdateCheck
         .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.autoUpdateCheck.value)
+
+    // Update available but dismissed this session: show a re-open row + badge.
+    val available = checkState as? UpdateCheckState.Available
+    val updatePending = available != null && dialogDismissed
 
     GlassRow(
         title = "Check for updates",
@@ -981,14 +989,42 @@ private fun ColumnScope.UpdatesSection() {
             "Currently on v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}).",
         onClick = { UpdateRepository.check(context) },
         trailing = {
-            PillAction(
-                text = if (checkState is UpdateCheckState.Checking) "Checking…" else "Check now",
-                onClick = { UpdateRepository.check(context) },
-                contentDescription = "Check GitHub Releases for a newer build",
-                enabled = checkState !is UpdateCheckState.Checking
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PillAction(
+                    text = if (checkState is UpdateCheckState.Checking) "Checking…" else "Check now",
+                    onClick = { UpdateRepository.check(context) },
+                    contentDescription = "Check GitHub Releases for a newer build",
+                    enabled = checkState !is UpdateCheckState.Checking
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                UpdatePendingDot(
+                    viewModel = updateViewModel,
+                    modifier = Modifier.size(9.dp)
+                )
+            }
         }
     )
+
+    // The re-open affordance: dismissing the dialog with "Later" must not be a
+    // dead end. This row appears while an update is available-but-dismissed and,
+    // unlike "Check now", does not hit the network again — it just re-shows the
+    // dialog the ViewModel is already holding.
+    if (updatePending) {
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 6.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+        GlassRow(
+            title = "Update available — v${available?.info?.versionName}",
+            icon = Icons.Default.SystemUpdate,
+            subtitle = "You dismissed this earlier. Open the update prompt again without checking the network.",
+            onClick = { updateViewModel.showDialog() },
+            trailing = {
+                UpdatePendingDot(viewModel = updateViewModel, modifier = Modifier.size(9.dp))
+            }
+        )
+    }
 
     UpdateStatusLine(
         checkState = checkState,

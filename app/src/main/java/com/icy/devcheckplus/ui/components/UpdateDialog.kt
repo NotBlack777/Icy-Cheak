@@ -1,12 +1,15 @@
 package com.icy.devcheckplus.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.OpenInNew
@@ -33,11 +36,19 @@ import com.icy.devcheckplus.data.ApkUpdateInstaller
 import com.icy.devcheckplus.data.UpdateCheckState
 import com.icy.devcheckplus.data.UpdateDownloadState
 import com.icy.devcheckplus.data.UpdateRepository
+import com.icy.devcheckplus.data.UpdateViewModel
 import com.icy.devcheckplus.data.UpdateChecker
 
 /**
  * Hosts the "update available" flow: check result → download with progress →
  * hand off to the platform installer.
+ *
+ * The dialog's *visibility* is now driven by [UpdateViewModel] instead of a
+ * launch-time side effect, which is the fix for "the update dialog can only be
+ * seen once per process": dismissing it only flips the ViewModel's
+ * `dialogDismissed` flag — the underlying "an update is available" state in
+ * UpdateRepository is untouched, so a manual "Check for updates" in Settings can
+ * re-raise the dialog at any time without restarting the app.
  *
  * The installer step is deliberately visible and explained in the dialog, because
  * Android requires an explicit user confirmation for every package install
@@ -47,11 +58,11 @@ import com.icy.devcheckplus.data.UpdateChecker
  * generic error.
  */
 @Composable
-fun UpdateDialogHost() {
+fun UpdateDialogHost(updateViewModel: UpdateViewModel = androidx.lifecycle.viewmodel.compose.viewModel(factory = UpdateViewModel.Factory)) {
     val context = LocalContext.current
-    val checkState by UpdateRepository.checkState.collectAsStateWithLifecycle()
+    val checkState by updateViewModel.checkState.collectAsStateWithLifecycle()
     val downloadState by UpdateRepository.downloadState.collectAsStateWithLifecycle()
-    val dismissed by UpdateRepository.dismissedVersion.collectAsStateWithLifecycle()
+    val dialogDismissed by updateViewModel.dialogDismissed.collectAsStateWithLifecycle()
     val foreground = rememberIsForeground()
 
     // Re-read the install grant whenever the app comes back to the foreground,
@@ -62,7 +73,7 @@ fun UpdateDialogHost() {
     }
 
     val available = checkState as? UpdateCheckState.Available ?: return
-    if (available.info.tagName == dismissed) return
+    if (dialogDismissed) return
     val info = available.info
     // Snapshot the delegate reads once: a delegated `by` property cannot be smart
     // cast, and re-reading it inside a click lambda could observe a newer state.
@@ -75,7 +86,7 @@ fun UpdateDialogHost() {
     // Frosted glass panel instead of Material's flat dialog surface, so the update
     // prompt matches every other elevated surface in the app.
     GlassDialog(
-        onDismissRequest = { UpdateRepository.dismiss(checkState) },
+        onDismissRequest = { updateViewModel.hideDialog() },
         icon = Icons.Default.SystemUpdate,
         title = "Update available",
         text = {
@@ -132,9 +143,23 @@ fun UpdateDialogHost() {
             }
         },
         dismissButton = {
-            TextButton(onClick = { UpdateRepository.dismiss(checkState) }) { Text("Later") }
+            TextButton(onClick = { updateViewModel.hideDialog() }) { Text("Later") }
         }
     )
+}
+
+/**
+ * Small dot that lets the user re-open the available-update flow after tapping
+ * "Later": shown while an update is both available and currently dismissed —
+ * i.e. until the app closes or the update is applied.
+ */
+@Composable
+fun UpdatePendingDot(viewModel: UpdateViewModel, modifier: Modifier = Modifier) {
+    val checkState by viewModel.checkState.collectAsStateWithLifecycle()
+    val dialogDismissed by viewModel.dialogDismissed.collectAsStateWithLifecycle()
+    val pending = checkState is UpdateCheckState.Available && dialogDismissed
+    if (!pending) return
+    Box(modifier = modifier.background(MaterialTheme.colorScheme.primary, CircleShape))
 }
 
 @Composable

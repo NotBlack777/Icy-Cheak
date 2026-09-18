@@ -81,10 +81,17 @@ object UpdateRepository {
         }
     }
 
+    /**
+     * Dismisses the dialog for [result]. Since the update-dialog fix this no
+     * longer clears the availability state — it only records the version the
+     * user said "later" to, so a *fresh* check showing a newer version can still
+     * re-raise the dialog. The `Available` state itself is owned by
+     * [com.icy.devcheckplus.data.UpdateViewModel] when its viewModelScope is
+     * consuming this repository, and is only promoted back to the UI there.
+     */
     fun dismiss(result: UpdateCheckState) {
         val tag = (result as? UpdateCheckState.Available)?.info?.tagName
         _dismissedVersion.value = tag
-        _checkState.value = UpdateCheckState.Idle
     }
 
     fun reset() {

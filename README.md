@@ -71,6 +71,7 @@
     - Dynamic privilege switcher: **Auto**, **Root Superuser**, **Shizuku**, or **Standard Mode**.
     - Relaunch onboarding setup at any time.
     - Toggle public IP lookup.
+    - Check for updates, with a re-showable update dialog and a persistent "update available" badge.
 
 ---
 
