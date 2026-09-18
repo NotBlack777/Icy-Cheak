@@ -43,6 +43,7 @@ import com.icy.devcheckplus.ui.components.SkeletonList
 import com.icy.devcheckplus.ui.components.locateSectionIndex
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.liveMetric
+import com.icy.devcheckplus.ui.components.rememberLiveGraphsEnabled
 import com.icy.devcheckplus.ui.components.rememberLiveMetricsSnapshot
 import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
 import com.icy.devcheckplus.ui.theme.ChartPalette
@@ -155,7 +156,10 @@ private fun LiveTelemetryHeader() {
 @Composable
 private fun CpuFrequencyChart() {
     val scheme = MaterialTheme.colorScheme
-    val snapshot: State<LiveMetrics> = rememberLiveMetricsSnapshot()
+    // "Live graphs" off ⇒ no ticker subscription here and no Canvas in the card:
+    // the snapshot becomes a single sample and the card renders a flat readout.
+    val liveGraphs = rememberLiveGraphsEnabled()
+    val snapshot: State<LiveMetrics> = rememberLiveMetricsSnapshot(enabled = liveGraphs)
 
     val coreFreq = snapshot.liveMetric { it.coreFreqMhz }
     val average = snapshot.liveMetric { it.averageFreqMhz }
@@ -205,14 +209,16 @@ private fun CpuFrequencyChart() {
         yMin = 0f,
         yMax = ceiling,
         topLabel = if (ceiling > 0f) formatFrequency(ceiling) else null,
-        bottomLabel = "0 MHz"
+        bottomLabel = "0 MHz",
+        chartsEnabled = liveGraphs
     )
 }
 
 @Composable
 private fun MemoryUsageChart() {
     val scheme = MaterialTheme.colorScheme
-    val snapshot = rememberLiveMetricsSnapshot()
+    val liveGraphs = rememberLiveGraphsEnabled()
+    val snapshot = rememberLiveMetricsSnapshot(enabled = liveGraphs)
 
     val ramPercent = snapshot.liveMetric { it.ramPercent }
     val usedRamMb = snapshot.liveMetric { it.usedRamMb }
@@ -252,7 +258,8 @@ private fun MemoryUsageChart() {
         yMin = 0f,
         yMax = 100f,
         topLabel = "100%",
-        bottomLabel = "0%"
+        bottomLabel = "0%",
+        chartsEnabled = liveGraphs
     )
 }
 

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -281,7 +282,14 @@ fun LiveChartCard(
     topLabel: String? = null,
     bottomLabel: String? = null,
     chartHeight: Dp = 128.dp,
-    legend: List<Pair<String, Color>> = emptyList()
+    legend: List<Pair<String, Color>> = emptyList(),
+    /**
+     * Reads the "Live graphs" master switch by default: when it is off the card
+     * keeps its header, its big live readout and its exact height, but the Canvas
+     * is not composed at all — a flat last-known-value gauge is drawn instead, so
+     * there is no empty gap in the layout and no per-frame draw work.
+     */
+    chartsEnabled: Boolean = rememberLiveGraphsEnabled()
 ) {
     val scheme = MaterialTheme.colorScheme
 
@@ -344,16 +352,29 @@ fun LiveChartCard(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        LiveLineChart(
-            series = series,
-            version = version,
-            yMin = yMin,
-            yMax = yMax,
-            areaSeriesIndex = areaSeriesIndex,
-            chartHeight = chartHeight,
-            topLabel = topLabel,
-            bottomLabel = bottomLabel
-        )
+        if (chartsEnabled) {
+            LiveLineChart(
+                series = series,
+                version = version,
+                yMin = yMin,
+                yMax = yMax,
+                areaSeriesIndex = areaSeriesIndex,
+                chartHeight = chartHeight,
+                topLabel = topLabel,
+                bottomLabel = bottomLabel
+            )
+        } else {
+            StaticChartReadout(
+                value = value,
+                valueColor = valueColor,
+                points = series.getOrNull(areaSeriesIndex)?.points ?: series.lastOrNull()?.points.orEmpty(),
+                yMin = yMin,
+                yMax = yMax,
+                topLabel = topLabel,
+                bottomLabel = bottomLabel,
+                height = chartHeight
+            )
+        }
 
         if (legend.isNotEmpty()) {
             Spacer(modifier = Modifier.height(10.dp))
@@ -381,5 +402,103 @@ fun LiveChartCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * Flat stand-in for [LiveLineChart] used when the "Live graphs" master switch is
+ * off (Settings › Advanced).
+ *
+ * It keeps the chart's exact height so the card does not collapse into a gap, and
+ * shows the last sampled value plus a static gauge of where that value sits in the
+ * card's own axis range. Nothing here animates, nothing subscribes to the ticker
+ * and no [Canvas] is composed: the whole panel is drawn once per composition,
+ * which is the point of the switch.
+ */
+@Composable
+private fun StaticChartReadout(
+    value: String,
+    valueColor: Color,
+    points: List<Float>,
+    yMin: Float,
+    yMax: Float,
+    topLabel: String?,
+    bottomLabel: String?,
+    height: Dp
+) {
+    val scheme = MaterialTheme.colorScheme
+    val span = yMax - yMin
+    val hasDomain = span > 0.0001f
+    val last = points.lastOrNull()
+    val fraction = if (last != null && hasDomain) ((last - yMin) / span).coerceIn(0f, 1f) else 0f
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            .clip(RoundedCornerShape(14.dp))
+            .background(scheme.onSurface.copy(alpha = 0.04f))
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Text(
+            text = "Live graphs off • last known value",
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        if (hasDomain) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(scheme.onSurface.copy(alpha = 0.08f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        // Coerced away from 0 so the fill modifier always gets a
+                        // valid fraction instead of a zero-width layout pass.
+                        .fillMaxWidth(fraction.coerceIn(0.01f, 1f))
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(valueColor.copy(alpha = 0.55f))
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = bottomLabel ?: "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = topLabel ?: "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = if (points.size > 1) {
+                "${points.size} samples retained • turn live graphs back on in Settings › Advanced"
+            } else {
+                "Sampled once when this screen opened • turn live graphs back on in Settings › Advanced"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant
+        )
     }
 }

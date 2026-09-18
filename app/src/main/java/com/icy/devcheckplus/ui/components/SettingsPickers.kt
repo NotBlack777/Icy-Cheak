@@ -46,7 +46,7 @@ import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.AccentPalette
 import com.icy.devcheckplus.data.BackgroundAnimation
 import com.icy.devcheckplus.data.GradientStyle
-import com.icy.devcheckplus.data.LiveMetricsPoller
+import com.icy.devcheckplus.data.RefreshRate
 import com.icy.devcheckplus.data.ReportSection
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.ui.theme.contentColorOn
@@ -201,29 +201,37 @@ fun PickerOptionRow(
     }
 }
 
-/** Polling cadence picker for "Live telemetry polling". */
+/**
+ * Global refresh-rate picker.
+ *
+ * This replaced the old "live telemetry polling" picker: the telemetry interval
+ * is still what the user picks here, but the value now also drives the sensor
+ * publisher, the log viewer's auto-refresh and the dashboard's pinned re-reads,
+ * so there is exactly one cadence to reason about (and one to lower when the
+ * device feels slow). The battery/CPU trade-off is spelled out per option.
+ */
 @Composable
-fun PollIntervalSheet(currentMs: Long, onSelect: (Long) -> Unit, onDismiss: () -> Unit) {
+fun RefreshRateSheet(current: RefreshRate, onSelect: (RefreshRate) -> Unit, onDismiss: () -> Unit) {
+    val rates = remember { RefreshRate.values().toList() }
     PickerSheet(
-        title = "Live telemetry polling",
-        subtitle = "How often CPU frequency, RAM and battery are sampled while a live screen is " +
-            "visible. Faster is smoother but costs more battery; sampling always stops in the background.",
+        title = "Refresh rate",
+        subtitle = "One cadence for everything that updates live: telemetry charts, the Sensors tab, " +
+            "the log viewer's auto-refresh and the dashboard's pinned values.",
         onDismiss = onDismiss
     ) {
-        LiveMetricsPoller.INTERVAL_OPTIONS_MS.forEach { interval ->
+        rates.forEach { rate ->
             PickerOptionRow(
-                label = UserPreferencesStore.formatPollInterval(interval),
-                caption = when (interval) {
-                    500L -> "Smoothest charts • highest battery use"
-                    1_000L -> "Default — one sample per second"
-                    2_000L -> "Half the wake-ups"
-                    5_000L -> "Lowest battery use • coarse charts"
-                    else -> null
-                },
-                selected = interval == currentMs,
-                onClick = { onSelect(interval); onDismiss() }
+                label = "${rate.label}  •  ${UserPreferencesStore.formatPollInterval(rate.intervalMs)}",
+                caption = rate.cost,
+                selected = rate == current,
+                onClick = { onSelect(rate); onDismiss() }
             )
         }
+        PickerNote(
+            text = "Real-time may increase battery and CPU usage — every telemetry sample can cost one " +
+                "privileged shell read. Deep re-reads (pinned values, logcat) stay at least 5 s apart " +
+                "whatever you pick here, and all sampling stops in the background."
+        )
     }
 }
 

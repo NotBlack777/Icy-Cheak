@@ -31,8 +31,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.util.Locale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.SensorLiveMonitor
+import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.model.SensorLiveData
 import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
@@ -42,6 +44,8 @@ import com.icy.devcheckplus.ui.components.LocateMatchEffect
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.locateRowIndex
 import com.icy.devcheckplus.ui.components.rememberIsForeground
+import com.icy.devcheckplus.ui.components.rememberLiveGraphsEnabled
+import com.icy.devcheckplus.ui.components.rememberRefreshIntervalMs
 
 @Composable
 fun SensorsScreen(
@@ -50,7 +54,12 @@ fun SensorsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val monitor = remember { SensorLiveMonitor(context) }
+    // One global cadence: the sensor publisher follows the same refresh rate as
+    // the telemetry ticker, the log viewer and the dashboard pins, and a new
+    // monitor is built when the user changes it (the old one is torn down by the
+    // DisposableEffect below, worker thread included).
+    val refreshMs = rememberRefreshIntervalMs()
+    val monitor = remember(refreshMs) { SensorLiveMonitor(context, refreshMs) }
     // Lifecycle-aware: the sensor flow stops being observed in the background,
     // and the monitor below tears its worker thread down at the same moment.
     val sensorsMap by monitor.sensorsFlow.collectAsStateWithLifecycle(
@@ -60,7 +69,7 @@ fun SensorsScreen(
 
     // Sampling only happens while this screen is composed AND the app is in the
     // foreground; stopListening() also tears down the sensor worker thread.
-    DisposableEffect(foreground) {
+    DisposableEffect(monitor, foreground) {
         if (foreground) monitor.startListening()
         onDispose { monitor.stopListening() }
     }
@@ -110,7 +119,7 @@ fun SensorsScreen(
                 GlassSectionHeader(
                     title = "LIVE SENSORS",
                     icon = Icons.Default.Sensors,
-                    supporting = "500 ms sampling"
+                    supporting = "${UserPreferencesStore.formatPollInterval(refreshMs)} sampling • shared refresh rate"
                 )
             }
             items(filteredSensors, key = { it.type }) { sensor ->
@@ -173,9 +182,58 @@ private fun SensorGraphCard(sensor: SensorLiveData) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        MiniGraph(
-            history = sensor.history,
-            lineColor = scheme.primary
+        if (rememberLiveGraphsEnabled()) {
+            MiniGraph(
+                history = sensor.history,
+                lineColor = scheme.primary
+            )
+        } else {
+            // Master switch off: no sparkline canvas per card, just the retained
+            // history summarised as text at the same height.
+            StaticSensorReadout(history = sensor.history)
+        }
+    }
+}
+
+/**
+ * Flat replacement for the per-sensor sparkline while "Live graphs" is off: same
+ * 48 dp slot, three numbers from the retained history, zero draw work per frame.
+ */
+@Composable
+private fun StaticSensorReadout(history: List<Float>) {
+    val scheme = MaterialTheme.colorScheme
+    val summary = remember(history) {
+        if (history.size < 2) {
+            null
+        } else {
+            val min = history.min()
+            val max = history.max()
+            val avg = history.sum() / history.size
+            Triple(min, avg, max)
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(scheme.onSurface.copy(alpha = 0.04f))
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(
+            text = if (summary == null) {
+                "Sparkline off • sampling…"
+            } else {
+                String.format(
+                    Locale.US,
+                    "Sparkline off • min %.2f  avg %.2f  max %.2f",
+                    summary.first, summary.second, summary.third
+                )
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant,
+            maxLines = 2
         )
     }
 }

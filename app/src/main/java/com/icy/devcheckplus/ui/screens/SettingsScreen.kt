@@ -34,8 +34,10 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
@@ -88,7 +90,8 @@ import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.GradientGrid
 import com.icy.devcheckplus.ui.components.HapticSwitch
 import com.icy.devcheckplus.ui.components.PillAction
-import com.icy.devcheckplus.ui.components.PollIntervalSheet
+import com.icy.devcheckplus.ui.components.RefreshRateSheet
+import com.icy.devcheckplus.ui.components.rememberFrameReport
 import com.icy.devcheckplus.ui.components.ReportSectionsSheet
 import com.icy.devcheckplus.ui.components.SelectableTile
 import com.icy.devcheckplus.ui.components.SettingsOrganizerSheet
@@ -124,7 +127,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     var showExportDialog by remember { mutableStateOf(false) }
-    var showPollIntervalSheet by remember { mutableStateOf(false) }
+    var showRefreshRateSheet by remember { mutableStateOf(false) }
     var showReportSectionsSheet by remember { mutableStateOf(false) }
     var showAnimationWarning by remember { mutableStateOf(false) }
     var showOrganizer by remember { mutableStateOf(false) }
@@ -174,7 +177,7 @@ fun SettingsScreen(
                         )
                         SettingsSectionId.PRIVILEGE -> PrivilegeCard()
                         SettingsSectionId.PRIVACY -> PrivacyCard(
-                            onPollIntervalClick = { showPollIntervalSheet = true }
+                            onRefreshRateClick = { showRefreshRateSheet = true }
                         )
                         SettingsSectionId.GENERAL -> GeneralCard(onResetOnboarding = onResetOnboarding)
                         SettingsSectionId.EXPORT -> ExportCard(
@@ -204,13 +207,13 @@ fun SettingsScreen(
             ExportReportDialog(onDismiss = { showExportDialog = false })
         }
 
-        if (showPollIntervalSheet) {
-            val interval by UserPreferencesStore.pollIntervalMs
-                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.pollIntervalMs.value)
-            PollIntervalSheet(
-                currentMs = interval,
-                onSelect = { UserPreferencesStore.setPollInterval(it) },
-                onDismiss = { showPollIntervalSheet = false }
+        if (showRefreshRateSheet) {
+            val rate by UserPreferencesStore.refreshRate
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.refreshRate.value)
+            RefreshRateSheet(
+                current = rate,
+                onSelect = { UserPreferencesStore.setRefreshRate(it) },
+                onDismiss = { showRefreshRateSheet = false }
             )
         }
 
@@ -878,14 +881,21 @@ private fun UpdatesCard() {
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun PrivacyCard(onPollIntervalClick: () -> Unit) {
+private fun PrivacyCard(onRefreshRateClick: () -> Unit) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
     val publicIpLookup by AppSettingsStore.publicIpLookup
         .collectAsStateWithLifecycle(initialValue = AppSettingsStore.publicIpLookup.value)
-    val pollInterval by UserPreferencesStore.pollIntervalMs
-        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.pollIntervalMs.value)
+    val refreshRate by UserPreferencesStore.refreshRate
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.refreshRate.value)
+    val liveGraphs by UserPreferencesStore.liveGraphsEnabled
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.liveGraphsEnabled.value)
+    val frameMetrics by UserPreferencesStore.frameMetricsLogging
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.frameMetricsLogging.value)
+    // Only non-null while logging is on: the row then reports the measured jank
+    // of the last window, which is how the switches above are verified on device.
+    val frameReport = rememberFrameReport()
 
     GlassCard(frosted = true) {
         GlassRow(
@@ -907,17 +917,62 @@ private fun PrivacyCard(onPollIntervalClick: () -> Unit) {
         )
 
         GlassRow(
-            title = "Live telemetry polling",
+            title = "Live graphs",
+            icon = Icons.Default.ShowChart,
+            subtitle = if (liveGraphs) {
+                "CPU, RAM, battery and sensor charts redraw continuously while their screen is visible."
+            } else {
+                "Charts are not composed at all: every card shows a flat last-known value instead, and " +
+                    "the telemetry ticker stops if nothing else needs it. The cheapest rendering path."
+            },
+            trailing = {
+                HapticSwitch(
+                    checked = liveGraphs,
+                    onCheckedChange = { UserPreferencesStore.setLiveGraphsEnabled(it) }
+                )
+            }
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 6.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+
+        GlassRow(
+            title = "Refresh rate",
             icon = Icons.Default.Speed,
-            subtitle = "CPU, RAM and battery share one sampling loop while a live screen is visible, " +
-                "and it pauses in the background. Currently sampling every " +
-                "${UserPreferencesStore.formatPollInterval(pollInterval)}.",
-            onClick = onPollIntervalClick,
+            subtitle = "One cadence for every live surface — telemetry, sensors, log auto-refresh and " +
+                "pinned dashboard values. Currently ${refreshRate.label} " +
+                "(${UserPreferencesStore.formatPollInterval(refreshRate.intervalMs)}).",
+            onClick = onRefreshRateClick,
             trailing = {
                 PillAction(
-                    text = UserPreferencesStore.formatPollInterval(pollInterval),
-                    onClick = onPollIntervalClick,
-                    contentDescription = "Change live telemetry polling interval"
+                    text = refreshRate.label,
+                    onClick = onRefreshRateClick,
+                    contentDescription = "Change the global refresh rate"
+                )
+            }
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 6.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+
+        GlassRow(
+            title = "Frame metrics logging",
+            icon = Icons.Default.Timeline,
+            subtitle = frameReport?.let {
+                "Measured • last ${it.windowMs / 1000} s: ${it.summary()} • ${it.config}"
+            } ?: "Writes a rolling jank summary to logcat (tag DevCheckPerf) together with the " +
+                "settings that produced it, so the two switches above can be measured instead of " +
+                "guessed at. Off costs nothing.",
+            trailing = {
+                HapticSwitch(
+                    checked = frameMetrics,
+                    onCheckedChange = { UserPreferencesStore.setFrameMetricsLogging(it) }
                 )
             }
         )

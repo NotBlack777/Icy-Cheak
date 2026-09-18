@@ -54,6 +54,7 @@ import com.icy.devcheckplus.ui.components.LocalSearchFocus
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.locateRowIndex
 import com.icy.devcheckplus.ui.components.rememberMatchHighlight
+import com.icy.devcheckplus.ui.components.rememberDeepReadIntervalMs
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
@@ -62,7 +63,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-private const val LOG_REFRESH_INTERVAL_MS = 3_000L
 private const val LOG_LINE_LIMIT = 150
 
 @Composable
@@ -97,10 +97,14 @@ fun SystemLogsScreen(
 
     // Fixed-cadence polling that stops when auto-refresh is off, when the tab is
     // switched away (this leaves composition) or when the app is backgrounded.
-    LaunchedEffect(autoRefresh, foreground) {
+    // The cadence is the global refresh rate's deep-read interval — one logcat
+    // pull is a privileged process spawn, so it is deliberately throttled the
+    // same way as the dashboard's pinned reads.
+    val logRefreshMs = rememberDeepReadIntervalMs()
+    LaunchedEffect(autoRefresh, foreground, logRefreshMs) {
         if (!autoRefresh || !foreground) return@LaunchedEffect
         while (isActive) {
-            delay(LOG_REFRESH_INTERVAL_MS)
+            delay(logRefreshMs)
             val (list, err) = LogcatDataProvider.fetchRecentLogs(LOG_LINE_LIMIT)
             logs = list
             errorMessage = err

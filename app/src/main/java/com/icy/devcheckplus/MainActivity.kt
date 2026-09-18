@@ -65,11 +65,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.AppSettingsStore
+import com.icy.devcheckplus.data.FrameMetricsMonitor
 import com.icy.devcheckplus.data.UpdateRepository
 import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.navigation.NavCategory
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.ui.components.ExportReportDialog
+import com.icy.devcheckplus.ui.components.FrameMetricsPrefEffect
 import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
 import com.icy.devcheckplus.ui.components.ScrollActivityProvider
@@ -98,6 +100,10 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Frame-timing instrumentation (Settings › Advanced › Frame metrics
+        // logging). Attaching here only hands the monitor a window: nothing is
+        // listened to until the user switches it on.
+        FrameMetricsMonitor.attach(window)
         setContent {
             // Appearance prefs are mirrored into StateFlows by AppSettingsStore, so a
             // theme change in Settings is applied app-wide on the next frame.
@@ -131,10 +137,20 @@ class MainActivity : ComponentActivity() {
                 // blur layers, card elevation shadows and the ambient animation
                 // stand down (see ScrollActivity.kt).
                 ScrollActivityProvider {
+                    // Keeps FrameMetricsMonitor's on/off state and its settings
+                    // label in step with the user's performance switches.
+                    FrameMetricsPrefEffect()
                     MainAppContainer()
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        // Removes the platform listener and quits the metrics thread, so nothing
+        // survives the activity it was attached to.
+        FrameMetricsMonitor.detach()
+        super.onDestroy()
     }
 }
 
