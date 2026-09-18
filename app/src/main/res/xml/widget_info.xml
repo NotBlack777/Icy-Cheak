@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  updatePeriodMillis is the system-driven fallback (Android clamps it to a
+  30 minute minimum). The 60 s "live" cadence comes from WidgetRefreshScheduler,
+  which uses an inexact, non-wake alarm that only runs while a widget is placed
+  and never wakes the device out of doze.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/widget_metrics"
+    android:minWidth="250dp"
+    android:minHeight="60dp"
+    android:minResizeWidth="180dp"
+    android:previewLayout="@layout/widget_metrics"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="4"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable|configuration_optional" />

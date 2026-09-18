@@ -8,12 +8,18 @@ import android.os.Build
 import com.icy.devcheckplus.model.InfoItem
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.privilege.UNAVAILABLE_NEEDS_PRIVILEGE
+import com.icy.devcheckplus.privilege.UNAVAILABLE_TIMED_OUT
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
 object BatteryDataProvider {
+
+    /** Watchdog for one sysfs cat — these are normally instant. */
+    private const val SYSFS_TIMEOUT_MS = 4_000L
+
 
     suspend fun getBatterySections(context: Context): List<InfoSection> = withContext(Dispatchers.IO) {
         val sections = mutableListOf<InfoSection>()
@@ -94,13 +100,12 @@ object BatteryDataProvider {
         val privilegeState = PrivilegeManager.status.value
         val hasPrivilege = privilegeState.activeMode != PrivilegeMode.NONE
 
-        val chargeCycles = readChargeCycles()
-        val cyclesText = if (chargeCycles != null) {
-            "$chargeCycles cycles"
-        } else if (hasPrivilege) {
-            "Kernel driver does not report cycles"
-        } else {
-            "Unavailable — requires root or Shizuku"
+        val (chargeCycles, cyclesTimedOut) = readChargeCycles()
+        val cyclesText = when {
+            chargeCycles != null -> "$chargeCycles cycles"
+            cyclesTimedOut -> UNAVAILABLE_TIMED_OUT
+            hasPrivilege -> "Kernel driver does not report cycles"
+            else -> UNAVAILABLE_NEEDS_PRIVILEGE
         }
         capacityItems.add(
             InfoItem(
@@ -149,31 +154,34 @@ object BatteryDataProvider {
         }
     }
 
-    private suspend fun readChargeCycles(): Long? {
+    /** Returns the cycle count plus whether a privileged read hit the watchdog. */
+    private suspend fun readChargeCycles(): Pair<Long?, Boolean> {
         val paths = listOf(
             "/sys/class/power_supply/battery/cycle_count",
             "/sys/class/power_supply/bms/cycle_count"
         )
+        var timedOut = false
         for (path in paths) {
             try {
                 val f = File(path)
                 if (f.exists() && f.canRead()) {
                     val count = f.readText().trim().toLongOrNull()
-                    if (count != null && count >= 0) return count
+                    if (count != null && count >= 0) return Pair(count, false)
                 }
             } catch (_: Exception) {
             }
 
             try {
-                val res = PrivilegeManager.executeCommand("cat $path")
+                val res = PrivilegeManager.executeCommand("cat $path", timeoutMs = SYSFS_TIMEOUT_MS)
+                if (res.timedOut) timedOut = true
                 if (res.isSuccess && res.stdout.isNotEmpty()) {
                     val count = res.stdout.first().trim().toLongOrNull()
-                    if (count != null && count >= 0) return count
+                    if (count != null && count >= 0) return Pair(count, false)
                 }
             } catch (_: Exception) {
             }
         }
-        return null
+        return Pair(null, timedOut)
     }
 
     private suspend fun readSysfsCapacity(): Long? {
@@ -183,7 +191,7 @@ object BatteryDataProvider {
         )
         for (p in paths) {
             try {
-                val res = PrivilegeManager.executeCommand("cat $p")
+                val res = PrivilegeManager.executeCommand("cat $p", timeoutMs = SYSFS_TIMEOUT_MS)
                 if (res.isSuccess && res.stdout.isNotEmpty()) {
                     val raw = res.stdout.first().trim().toLongOrNull()
                     if (raw != null && raw > 0) {

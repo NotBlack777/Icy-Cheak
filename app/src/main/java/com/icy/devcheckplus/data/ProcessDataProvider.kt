@@ -2,11 +2,16 @@ package com.icy.devcheckplus.data
 
 import com.icy.devcheckplus.model.ProcessItem
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.privilege.UNAVAILABLE_TIMED_OUT
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object ProcessDataProvider {
+
+    /** Watchdog for the process-table dump. */
+    private const val PS_TIMEOUT_MS = 8_000L
+
 
     suspend fun getProcesses(): Pair<List<ProcessItem>, String?> = withContext(Dispatchers.IO) {
         val list = mutableListOf<ProcessItem>()
@@ -20,7 +25,13 @@ object ProcessDataProvider {
             )
         }
 
-        val result = PrivilegeManager.executeCommand("ps -A -o USER,PID,%CPU,RSS,STAT,NAME 2>/dev/null || ps -ef 2>/dev/null || ps")
+        val result = PrivilegeManager.executeCommand(
+            "ps -A -o USER,PID,%CPU,RSS,STAT,NAME 2>/dev/null || ps -ef 2>/dev/null || ps",
+            timeoutMs = PS_TIMEOUT_MS
+        )
+        if (result.timedOut) {
+            return@withContext Pair(emptyList(), UNAVAILABLE_TIMED_OUT)
+        }
         if (!result.isSuccess || result.stdout.isEmpty()) {
             return@withContext Pair(
                 emptyList(),

@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#161B22</color>
+
+    <!-- Home screen widget palette (mirrors the app's deep-dark glass look). -->
+    <color name="widget_card_background">#F2161B22</color>
+    <color name="widget_cell_background">#14FFFFFF</color>
+    <color name="widget_border">#3300D2FF</color>
+    <color name="widget_text_primary">#F0F6FC</color>
+    <color name="widget_text_secondary">#8B949E</color>
+    <color name="widget_accent">#00D2FF</color>
+    <color name="widget_warn">#D29922</color>
+    <color name="widget_critical">#F85149</color>
 </resources>

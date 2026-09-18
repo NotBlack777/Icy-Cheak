@@ -1,5 +1,6 @@
 package com.icy.devcheckplus.ui.screens
 
+import com.icy.devcheckplus.ui.components.rememberHapticTick
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,6 +55,8 @@ fun InstalledAppsScreen(
         loading = false
     }
 
+    val tick = rememberHapticTick()
+
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -63,17 +66,17 @@ fun InstalledAppsScreen(
         ) {
             FilterChip(
                 selected = filterType == 0,
-                onClick = { filterType = 0 },
+                onClick = { tick(); filterType = 0 },
                 label = { Text("All (${apps.size})") }
             )
             FilterChip(
                 selected = filterType == 1,
-                onClick = { filterType = 1 },
+                onClick = { tick(); filterType = 1 },
                 label = { Text("User (${apps.count { !it.isSystemApp }})") }
             )
             FilterChip(
                 selected = filterType == 2,
-                onClick = { filterType = 2 },
+                onClick = { tick(); filterType = 2 },
                 label = { Text("System (${apps.count { it.isSystemApp }})") }
             )
         }

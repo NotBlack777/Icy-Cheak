@@ -1,5 +1,6 @@
 package com.icy.devcheckplus
 
+import com.icy.devcheckplus.ui.components.rememberHapticTick
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,6 +26,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -42,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,16 +56,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.navigation.NavCategory
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.ui.components.ExportReportDialog
+import com.icy.devcheckplus.ui.components.GlassTopBar
 import com.icy.devcheckplus.ui.components.PrivilegeStatusHeader
+import com.icy.devcheckplus.ui.components.SearchSuggestionRow
 import com.icy.devcheckplus.ui.screens.BatteryScreen
+import com.icy.devcheckplus.ui.screens.ConsoleScreen
+import com.icy.devcheckplus.ui.screens.DashboardScreen
 import com.icy.devcheckplus.ui.screens.HardwareScreen
 import com.icy.devcheckplus.ui.screens.InstalledAppsScreen
 import com.icy.devcheckplus.ui.screens.NetworkScreen
@@ -72,13 +85,19 @@ import com.icy.devcheckplus.ui.screens.SoftwareScreen
 import com.icy.devcheckplus.ui.screens.StorageScreen
 import com.icy.devcheckplus.ui.screens.SystemLogsScreen
 import com.icy.devcheckplus.ui.theme.DevCheckPlusTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            DevCheckPlusTheme {
+            // Appearance prefs are mirrored into StateFlows by AppSettingsStore, so a
+            // theme change in Settings is applied app-wide on the next frame.
+            val themeMode by AppSettingsStore.themeMode.collectAsState()
+            val dynamicColor by AppSettingsStore.dynamicColor.collectAsState()
+
+            DevCheckPlusTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
                 MainAppContainer()
             }
         }
@@ -111,9 +130,23 @@ fun MainDashboardScreen(
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    var currentCategory by remember { mutableStateOf(NavCategory.HARDWARE) }
+    val context = LocalContext.current
+    var currentCategory by remember { mutableStateOf(NavCategory.DASHBOARD) }
     var searchQuery by remember { mutableStateOf("") }
+    var searchFocused by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val searchHistory by AppSettingsStore.searchHistory.collectAsState()
+    val hapticTick = rememberHapticTick()
+
+    // Remember what the user actually searched for: only the term that survives
+    // 1.2 s of idle typing is stored, so intermediate keystrokes are skipped.
+    LaunchedEffect(searchQuery) {
+        val term = searchQuery.trim()
+        if (term.length < 2) return@LaunchedEffect
+        delay(1_200)
+        AppSettingsStore.addSearchTerm(context, term)
+    }
     val privilegeStatus by PrivilegeManager.status.collectAsState()
 
     ModalNavigationDrawer(
@@ -165,6 +198,7 @@ fun MainDashboardScreen(
                         },
                         selected = isSelected,
                         onClick = {
+                            hapticTick()
                             currentCategory = category
                             scope.launch { drawerState.close() }
                         },
@@ -188,11 +222,24 @@ fun MainDashboardScreen(
         }
     ) {
         Scaffold(
+            // The Settings tab has its own Export card, so the FAB hides there.
+            floatingActionButton = {
+                if (currentCategory != NavCategory.SETTINGS) {
+                    FloatingActionButton(
+                        onClick = { showExportDialog = true },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Export device report"
+                        )
+                    }
+                }
+            },
+            floatingActionButtonPosition = FabPosition.End,
             topBar = {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 3.dp
-                ) {
+                GlassTopBar(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -241,7 +288,12 @@ fun MainDashboardScreen(
                                 },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                                keyboardActions = KeyboardActions(
+                                    onSearch = {
+                                        AppSettingsStore.addSearchTerm(context, searchQuery)
+                                        focusManager.clearFocus()
+                                    }
+                                ),
                                 shape = RoundedCornerShape(24.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -252,6 +304,19 @@ fun MainDashboardScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(50.dp)
+                                    .onFocusChanged { searchFocused = it.isFocused }
+                            )
+                        }
+
+                        // Quick-tap recent searches while the field is focused and empty.
+                        if (searchFocused && searchQuery.isEmpty() && searchHistory.isNotEmpty()) {
+                            SearchSuggestionRow(
+                                suggestions = searchHistory,
+                                onSuggestionClick = { term ->
+                                    searchQuery = term
+                                    AppSettingsStore.addSearchTerm(context, term)
+                                },
+                                onClearHistory = { AppSettingsStore.clearSearchHistory(context) }
                             )
                         }
 
@@ -278,6 +343,7 @@ fun MainDashboardScreen(
                     label = "CategoryTransition"
                 ) { category ->
                     when (category) {
+                        NavCategory.DASHBOARD -> DashboardScreen(searchQuery = searchQuery)
                         NavCategory.HARDWARE -> HardwareScreen(searchQuery = searchQuery)
                         NavCategory.SOFTWARE -> SoftwareScreen(searchQuery = searchQuery)
                         NavCategory.BATTERY -> BatteryScreen(searchQuery = searchQuery)
@@ -287,10 +353,15 @@ fun MainDashboardScreen(
                         NavCategory.APPS -> InstalledAppsScreen(searchQuery = searchQuery)
                         NavCategory.LOGS -> SystemLogsScreen(searchQuery = searchQuery)
                         NavCategory.SENSORS -> SensorsScreen(searchQuery = searchQuery)
+                        NavCategory.CONSOLE -> ConsoleScreen()
                         NavCategory.SETTINGS -> SettingsScreen(onResetOnboarding = onResetOnboarding)
                     }
                 }
             }
+        }
+
+        if (showExportDialog) {
+            ExportReportDialog(onDismiss = { showExportDialog = false })
         }
     }
 }

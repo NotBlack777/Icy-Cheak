@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,11 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,71 +36,81 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.icy.devcheckplus.data.PinnableCategory
+import com.icy.devcheckplus.data.PinnedItemKey
 import com.icy.devcheckplus.model.InfoItem
 import com.icy.devcheckplus.model.InfoSection
-import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
+import com.icy.devcheckplus.ui.theme.LocalGlassSpec
 
+/**
+ * Collapsible information card.
+ *
+ * Uses the shared glass container (18dp radius, translucent tint, hairline
+ * border, soft elevation) but with `frosted = false`: these cards appear in long
+ * scrolling lists, so no blur layer is created for them. Blur stays reserved for
+ * the handful of Settings panels and the top app bar.
+ */
 @Composable
 fun InfoSectionCard(
     section: InfoSection,
     modifier: Modifier = Modifier,
-    initiallyExpanded: Boolean = true
+    initiallyExpanded: Boolean = true,
+    category: PinnableCategory? = null
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
+    val spec = LocalGlassSpec.current
+    val tick = rememberHapticTick()
 
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    GlassCard(
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 5.dp),
+        shape = RoundedCornerShape(18.dp),
+        contentPadding = PaddingValues(0.dp),
+        frosted = false
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .clickable { tick(); expanded = !expanded }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = section.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(animationSpec = tween(200)),
+            exit = shrinkVertically(animationSpec = tween(200))
+        ) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 12.dp)
             ) {
-                Text(
-                    text = section.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically(animationSpec = tween(200)),
-                exit = shrinkVertically(animationSpec = tween(200))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 12.dp)
-                ) {
-                    section.items.forEachIndexed { index, item ->
-                        InfoRowItem(item = item)
-                        if (index < section.items.lastIndex) {
-                            Divider(
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                thickness = 0.8.dp
-                            )
-                        }
+                section.items.forEachIndexed { index, item ->
+                    InfoRowItem(item = item, category = category, sectionTitle = section.title)
+                    if (index < section.items.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = spec.borderAlpha * 0.45f),
+                            thickness = 0.8.dp
+                        )
                     }
                 }
             }
@@ -111,7 +119,11 @@ fun InfoSectionCard(
 }
 
 @Composable
-fun InfoRowItem(item: InfoItem) {
+fun InfoRowItem(
+    item: InfoItem,
+    category: PinnableCategory? = null,
+    sectionTitle: String? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -141,7 +153,8 @@ fun InfoRowItem(item: InfoItem) {
             horizontalAlignment = Alignment.End,
             modifier = Modifier.weight(1f)
         ) {
-            val isRestricted = item.value.contains("Unavailable", ignoreCase = true) || item.value.contains("requires", ignoreCase = true)
+            val isRestricted = item.value.contains("Unavailable", ignoreCase = true) ||
+                item.value.contains("requires", ignoreCase = true)
             Text(
                 text = item.value,
                 style = MaterialTheme.typography.bodyMedium,
@@ -155,6 +168,15 @@ fun InfoRowItem(item: InfoItem) {
                 PrivilegeBadge(source = item.privilegeSource)
             }
         }
+
+        // Pin affordance: rendered only where the caller declares a category.
+        if (category != null && sectionTitle != null) {
+            PinToggleButton(
+                pin = PinnedItemKey(category, sectionTitle, item.title),
+                modifier = Modifier.padding(start = 4.dp),
+                itemLabel = item.title
+            )
+        }
     }
 }
 
@@ -163,8 +185,8 @@ fun PrivilegeBadge(source: String?) {
     val text = if (!source.isNullOrBlank()) source else "Elevated Access"
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.primaryContainer)
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
             .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

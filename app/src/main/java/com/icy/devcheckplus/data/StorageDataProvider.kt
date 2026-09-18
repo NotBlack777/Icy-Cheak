@@ -14,6 +14,10 @@ import java.io.File
 
 object StorageDataProvider {
 
+    /** Watchdog for the partition table dump. */
+    private const val DF_TIMEOUT_MS = 6_000L
+
+
     suspend fun getStorageSections(context: Context): Pair<List<InfoSection>, List<PartitionItem>> = withContext(Dispatchers.IO) {
         val sections = mutableListOf<InfoSection>()
 
@@ -72,7 +76,8 @@ object StorageDataProvider {
     private suspend fun queryPartitions(): List<PartitionItem> {
         val list = mutableListOf<PartitionItem>()
         // Execute df via privilege manager or runtime
-        val res = PrivilegeManager.executeCommand("df -h 2>/dev/null || df")
+        val res = PrivilegeManager.executeCommand("df -h 2>/dev/null || df", timeoutMs = DF_TIMEOUT_MS)
+        if (res.timedOut) return emptyList()
         if (res.isSuccess && res.stdout.isNotEmpty()) {
             for (line in res.stdout) {
                 val parts = line.split(Regex("\\s+")).filter { it.isNotBlank() }

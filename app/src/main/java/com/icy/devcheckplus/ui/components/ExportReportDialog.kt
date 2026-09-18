@@ -1,0 +1,137 @@
+package com.icy.devcheckplus.ui.components
+
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.icy.devcheckplus.data.DeviceReport
+import com.icy.devcheckplus.data.ReportFormat
+import kotlinx.coroutines.launch
+
+/**
+ * "Export report" chooser: builds the device report in the requested format and
+ * hands it to the system share sheet.
+ *
+ * The build runs inside the composition's coroutine scope, so leaving the
+ * screen cancels it. Every category is watchdog-protected by [DeviceReport],
+ * therefore the dialog can never hang on a slow root/Shizuku call — the button
+ * stays disabled only while work is genuinely in flight.
+ */
+@Composable
+fun ExportReportDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf<ReportFormat?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun start(format: ReportFormat) {
+        if (busy != null) return
+        busy = format
+        error = null
+        scope.launch {
+            val body = try {
+                DeviceReport.build(context, format)
+            } catch (t: Throwable) {
+                null
+            }
+            busy = null
+            if (body == null) {
+                error = "Report generation failed. Try again, or switch the privilege mode in Settings."
+            } else {
+                val shared = runCatching { DeviceReport.share(context, format, body) }
+                if (shared.isSuccess) {
+                    onDismiss()
+                } else {
+                    error = "No app is available to share the report."
+                }
+            }
+        }
+    }
+
+    val scheme = MaterialTheme.colorScheme
+
+    AlertDialog(
+        onDismissRequest = { if (busy == null) onDismiss() },
+        shape = MaterialTheme.shapes.large,
+        containerColor = scheme.surface,
+        title = {
+            Text(
+                text = "Export device report",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Collects every category — hardware, software, battery, storage, network, " +
+                        "processes, installed apps and sensors — then opens Android's share sheet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "App version and an export timestamp head the report. Each category is guarded by a " +
+                        "20 second watchdog, so a slow permission prompt can never hang the export.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant
+                )
+
+                if (busy != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = scheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Collecting ${busy?.label?.lowercase()} report…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.primary
+                    )
+                }
+
+                val message = error
+                if (message != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { start(ReportFormat.TEXT) }, enabled = busy == null) {
+                Text("Plain text")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { start(ReportFormat.JSON) }, enabled = busy == null) {
+                    Text("JSON")
+                }
+                TextButton(onClick = onDismiss, enabled = busy == null) {
+                    Text("Cancel")
+                }
+            }
+        }
+    )
+}
