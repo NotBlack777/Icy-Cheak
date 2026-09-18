@@ -341,7 +341,7 @@ enum class ExportFormatPreference(
     }
 }
 
-/** The nine sections an exported device report can contain. */
+/** The ten sections an exported device report can contain. */
 enum class ReportSection(val id: String, val label: String) {
     TELEMETRY("telemetry", "Live telemetry"),
     HARDWARE("hardware", "Hardware"),
@@ -351,7 +351,8 @@ enum class ReportSection(val id: String, val label: String) {
     NETWORK("network", "Network"),
     PROCESSES("processes", "Processes"),
     INSTALLED_APPS("apps", "Installed apps"),
-    SENSORS("sensors", "Sensors");
+    SENSORS("sensors", "Sensors"),
+    DEV_ENVIRONMENT("dev_environment", "Dev Environment");
 
     companion object {
         val ALL: Set<ReportSection> = values().toSet()

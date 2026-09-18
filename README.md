@@ -62,7 +62,11 @@
    - Real-time readout of all available hardware sensors (accelerometer, gyroscope, light, proximity, barometer, etc.).
    - Live canvas graphing of real-time sensor measurements.
 
-10. **Settings & Privilege Engine**
+10. **Dev Environment**
+    - One-shot detector for development tools reachable from the device shell (Node.js, npm, Python, pip, Git, Java, Ruby, Go, Rust, PHP, Docker, Termux).
+    - Shows installed version and path per tool, with a manual Rescan — never a background poll.
+
+11. **Settings & Privilege Engine**
     - Dynamic privilege switcher: **Auto**, **Root Superuser**, **Shizuku**, or **Standard Mode**.
     - Relaunch onboarding setup at any time.
     - Toggle public IP lookup.

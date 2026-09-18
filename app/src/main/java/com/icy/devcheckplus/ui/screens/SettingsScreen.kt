@@ -1312,7 +1312,7 @@ private fun ColumnScope.ExportSection(onExport: () -> Unit, onSectionsClick: () 
         icon = Icons.Default.Info,
         subtitle = if (allIncluded) {
             "Hardware • Software • Battery • Storage • Network • Processes • Installed apps • " +
-                "Sensors • live telemetry. Tap to choose."
+                "Sensors • Dev Environment • live telemetry. Tap to choose."
         } else {
             sections.sortedBy { it.ordinal }.joinToString(" • ") { it.label } +
                 ". Tap to choose."

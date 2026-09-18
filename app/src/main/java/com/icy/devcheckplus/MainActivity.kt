@@ -89,6 +89,7 @@ import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.screens.BatteryScreen
 import com.icy.devcheckplus.ui.screens.ConsoleScreen
 import com.icy.devcheckplus.ui.screens.DashboardScreen
+import com.icy.devcheckplus.ui.screens.DevEnvironmentScreen
 import com.icy.devcheckplus.ui.screens.HardwareScreen
 import com.icy.devcheckplus.ui.screens.InstalledAppsScreen
 import com.icy.devcheckplus.ui.screens.NetworkScreen
@@ -397,6 +398,11 @@ fun MainDashboardScreen(
                             NavCategory.LOGS -> SystemLogsScreen(searchQuery = query, locateToken = locate)
                             NavCategory.SENSORS -> SensorsScreen(searchQuery = query, locateToken = locate)
                             NavCategory.CONSOLE -> ConsoleScreen()
+                            NavCategory.DEV_ENVIRONMENT -> DevEnvironmentScreen(
+                                searchQuery = query,
+                                locateToken = locate,
+                                onOpenSettings = { currentCategory = NavCategory.SETTINGS }
+                            )
                             NavCategory.SETTINGS -> SettingsScreen(onResetOnboarding = onResetOnboarding)
                         }
                     }
