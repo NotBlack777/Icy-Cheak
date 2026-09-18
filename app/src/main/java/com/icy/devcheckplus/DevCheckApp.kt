@@ -3,6 +3,7 @@ package com.icy.devcheckplus
 import android.app.Application
 import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.widget.MetricsWidgetProvider
 import com.topjohnwu.superuser.Shell
 
 class DevCheckApp : Application() {
@@ -24,5 +25,8 @@ class DevCheckApp : Application() {
         // theme (Dark / OLED / dynamic colour) is correct on cold start.
         AppSettingsStore.init(this)
         PrivilegeManager.init(this)
+        // Repaint any placed widget when the app is opened: a handful of local
+        // reads, so the widget is never stale right after a cold start.
+        MetricsWidgetProvider.refreshAll(this)
     }
 }
