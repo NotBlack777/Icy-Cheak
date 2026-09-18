@@ -76,6 +76,9 @@ private data class BatteryReading(
 object LiveMetricsRepository {
 
     const val DEFAULT_INTERVAL_MS = 1_000L
+
+    /** Watchdog for the batched per-poll frequency read. */
+    private const val POLL_COMMAND_TIMEOUT_MS = 3_500L
     private const val MAX_SAMPLES = 60
     private const val MB = 1024L * 1024L
 
@@ -252,7 +255,9 @@ object LiveMetricsRepository {
 
         // 2. Single batched privileged read covering every core.
         return try {
-            val result = PrivilegeManager.executeCommand(command)
+            // Polling runs every second, so this uses a short watchdog and lets
+            // the PrivilegeManager circuit breaker fast-fail a hung shell.
+            val result = PrivilegeManager.executeCommand(command, timeoutMs = POLL_COMMAND_TIMEOUT_MS)
             val values = result.stdout.mapNotNull { it.trim().toLongOrNull() }
             if (values.size == paths.size) values.map { if (it > 0) it / 1000f else 0f } else null
         } catch (_: Throwable) {

@@ -6,6 +6,7 @@ import android.os.SystemClock
 import com.icy.devcheckplus.model.InfoItem
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.privilege.UNAVAILABLE_TIMED_OUT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -15,6 +16,10 @@ import java.util.Date
 import java.util.Locale
 
 object SoftwareDataProvider {
+
+    /** Watchdog for a single getprop / getenforce read. */
+    private const val PROP_TIMEOUT_MS = 3_000L
+
 
     suspend fun getSoftwareSections(context: Context): List<InfoSection> = withContext(Dispatchers.IO) {
         val sections = mutableListOf<InfoSection>()
@@ -116,10 +121,11 @@ object SoftwareDataProvider {
     }
 
     private suspend fun getSELinuxStatus(): String {
-        val result = PrivilegeManager.executeCommand("getenforce")
+        val result = PrivilegeManager.executeCommand("getenforce", timeoutMs = PROP_TIMEOUT_MS)
         if (result.isSuccess && result.stdout.isNotEmpty()) {
             return result.stdout.first().trim()
         }
+        if (result.timedOut) return UNAVAILABLE_TIMED_OUT
         return "Enforcing"
     }
 
@@ -149,7 +155,10 @@ object SoftwareDataProvider {
             val res = getMethod.invoke(c, key) as? String
             if (!res.isNullOrBlank()) return res
 
-            val cmdRes = PrivilegeManager.executeCommand("getprop $key")
+            // Many properties are probed in a row, so each gets a short watchdog
+            // and the PrivilegeManager circuit breaker stops a hung shell from
+            // stacking timeouts.
+            val cmdRes = PrivilegeManager.executeCommand("getprop $key", timeoutMs = PROP_TIMEOUT_MS)
             if (cmdRes.isSuccess && cmdRes.stdout.isNotEmpty()) {
                 cmdRes.stdout.first().trim()
             } else ""

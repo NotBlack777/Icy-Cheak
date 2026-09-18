@@ -62,7 +62,6 @@ import com.icy.devcheckplus.privilege.PrivilegeMode
 import com.icy.devcheckplus.ui.components.GlassCard
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 /** Hard cap for a single command — the UI never waits longer than this. */
 private const val COMMAND_TIMEOUT_MS = 10_000L
@@ -166,7 +165,9 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
 
         job = scope.launch {
             val result = try {
-                withTimeoutOrNull(COMMAND_TIMEOUT_MS) { PrivilegeManager.executeCommand(trimmed) }
+                // PrivilegeManager applies the hard watchdog: a hung shell returns
+                // a timedOut result instead of blocking this coroutine.
+                PrivilegeManager.executeCommand(trimmed, timeoutMs = COMMAND_TIMEOUT_MS)
             } catch (t: Throwable) {
                 append(LineKind.ERROR, "Execution error: ${t.message ?: t.javaClass.simpleName}")
                 running = false
@@ -174,7 +175,7 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
                 return@launch
             }
 
-            if (result == null) {
+            if (result.timedOut) {
                 append(
                     LineKind.ERROR,
                     "Command timed out after ${COMMAND_TIMEOUT_MS / 1000} s — it may still be running in the shell, " +

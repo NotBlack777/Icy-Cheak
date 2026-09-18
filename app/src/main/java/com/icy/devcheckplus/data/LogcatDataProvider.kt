@@ -2,18 +2,26 @@ package com.icy.devcheckplus.data
 
 import com.icy.devcheckplus.model.LogcatEntry
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.privilege.UNAVAILABLE_TIMED_OUT
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object LogcatDataProvider {
 
+    /** Watchdog for one logcat dump; auto-refresh polls on a fixed cadence. */
+    private const val LOGCAT_TIMEOUT_MS = 8_000L
+
+
     suspend fun fetchRecentLogs(maxLines: Int = 150): Pair<List<LogcatEntry>, String?> = withContext(Dispatchers.IO) {
         val privilegeState = PrivilegeManager.status.value
         val isPrivileged = privilegeState.activeMode != PrivilegeMode.NONE
 
         val command = "logcat -d -t $maxLines -v threadtime"
-        val result = PrivilegeManager.executeCommand(command)
+        val result = PrivilegeManager.executeCommand(command, timeoutMs = LOGCAT_TIMEOUT_MS)
+        if (result.timedOut) {
+            return@withContext Pair(emptyList(), UNAVAILABLE_TIMED_OUT)
+        }
 
         if (!result.isSuccess || result.stdout.isEmpty()) {
             val errorMsg = if (!isPrivileged) {

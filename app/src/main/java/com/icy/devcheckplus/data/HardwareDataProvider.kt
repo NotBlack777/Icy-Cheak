@@ -11,6 +11,8 @@ import android.view.WindowManager
 import com.icy.devcheckplus.model.InfoItem
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.privilege.UNAVAILABLE_NEEDS_PRIVILEGE
+import com.icy.devcheckplus.privilege.UNAVAILABLE_TIMED_OUT
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,6 +20,10 @@ import java.io.File
 import java.io.RandomAccessFile
 
 object HardwareDataProvider {
+
+    /** Watchdog for a single per-core sysfs read. */
+    private const val CORE_READ_TIMEOUT_MS = 4_000L
+
 
     suspend fun getHardwareSections(context: Context): List<InfoSection> = withContext(Dispatchers.IO) {
         val sections = mutableListOf<InfoSection>()
@@ -39,14 +45,18 @@ object HardwareDataProvider {
         val privilegeState = PrivilegeManager.status.value
         val isPrivileged = privilegeState.activeMode != PrivilegeMode.NONE
 
+        // One hung shell must not cost `cores x timeout`: after the first
+        // watchdog trip the remaining cores are reported immediately.
+        var shellTimedOut = false
         for (i in 0 until cores) {
-            val freqResult = readCoreFreq(i)
-            val freqText = if (freqResult != null) {
-                "${freqResult / 1000} MHz"
-            } else if (isPrivileged) {
-                "Scaling offline / idle"
-            } else {
-                "Unavailable — requires root or Shizuku"
+            val read = if (shellTimedOut) FreqRead(null, true) else readCoreFreq(i)
+            if (read.timedOut) shellTimedOut = true
+            val freqResult = read.khz
+            val freqText = when {
+                freqResult != null -> "${freqResult / 1000} MHz"
+                read.timedOut -> UNAVAILABLE_TIMED_OUT
+                isPrivileged -> "Scaling offline / idle"
+                else -> UNAVAILABLE_NEEDS_PRIVILEGE
             }
             cpuItems.add(
                 InfoItem(
@@ -151,29 +161,34 @@ object HardwareDataProvider {
         }
     }
 
-    private suspend fun readCoreFreq(coreIndex: Int): Long? {
+    /** Result of one core-frequency read, including whether the watchdog fired. */
+    private class FreqRead(val khz: Long?, val timedOut: Boolean)
+
+    private suspend fun readCoreFreq(coreIndex: Int): FreqRead {
         val path = "/sys/devices/system/cpu/cpu$coreIndex/cpufreq/scaling_cur_freq"
         try {
             val file = File(path)
             if (file.exists() && file.canRead()) {
                 val line = file.readText().trim()
                 val freq = line.toLongOrNull()
-                if (freq != null && freq > 0) return freq
+                if (freq != null && freq > 0) return FreqRead(freq, false)
             }
         } catch (_: Exception) {
         }
 
-        // Try via PrivilegeManager if standard read is denied
+        // Try via PrivilegeManager if standard read is denied. Short watchdog:
+        // this runs once per core while a screen loads.
         try {
-            val res = PrivilegeManager.executeCommand("cat $path")
+            val res = PrivilegeManager.executeCommand("cat $path", timeoutMs = CORE_READ_TIMEOUT_MS)
             if (res.isSuccess && res.stdout.isNotEmpty()) {
                 val freq = res.stdout.firstOrNull()?.trim()?.toLongOrNull()
-                if (freq != null && freq > 0) return freq
+                if (freq != null && freq > 0) return FreqRead(freq, false)
             }
+            return FreqRead(null, res.timedOut)
         } catch (_: Exception) {
         }
 
-        return null
+        return FreqRead(null, false)
     }
 
     private fun getSwapInfoFromProc(): String {
