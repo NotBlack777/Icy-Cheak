@@ -19,11 +19,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.ui.draw.clip
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,12 +39,19 @@ import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.StorageDataProvider
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.model.PartitionItem
+import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.InfoSectionCard
 import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.SkeletonList
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.locateRowIndex
 import com.icy.devcheckplus.ui.components.locateSectionIndex
 import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.theme.AccentGreen
+import com.icy.devcheckplus.ui.theme.AccentOrange
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun StorageScreen(
@@ -59,11 +63,13 @@ fun StorageScreen(
     var sections by remember { mutableStateOf<List<InfoSection>>(emptyList()) }
     var partitions by remember { mutableStateOf<List<PartitionItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var scannedAt by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         val (sec, part) = StorageDataProvider.getStorageSections(context)
         sections = sec
         partitions = part
+        scannedAt = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         loading = false
     }
 
@@ -71,8 +77,9 @@ fun StorageScreen(
     TrackScrollActivity(listState)
 
     if (loading) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        // Skeletons match the other inventory screens: stable layout, no centered-spinner flash.
+        Column(modifier = modifier.fillMaxSize()) {
+            SkeletonList(count = 5)
         }
     } else {
         val filteredSections = remember(sections, searchQuery) {
@@ -98,13 +105,13 @@ fun StorageScreen(
             }
         }
 
-        // Sections come first, then partitions: a committed search locates
-        // whichever of the two holds the first match.
-        val sectionIndex = locateSectionIndex(filteredSections, searchQuery, headerCount = 0)
+        // Sections come first, then partitions (+1 for the header item): a
+        // committed search locates whichever of the two holds the first match.
+        val sectionIndex = locateSectionIndex(filteredSections, searchQuery, headerCount = 1)
         val partitionIndex = locateRowIndex(
             items = filteredPartitions,
             query = searchQuery,
-            headerCount = filteredSections.size + if (filteredPartitions.isNotEmpty()) 1 else 0,
+            headerCount = filteredSections.size + 1 + if (filteredPartitions.isNotEmpty()) 1 else 0,
             predicate = { part, query ->
                 part.mountPoint.contains(query, true) || part.filesystem.contains(query, true)
             }
@@ -116,6 +123,13 @@ fun StorageScreen(
         )
 
         LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
+            item(key = "storage_scanned_header") {
+                GlassSectionHeader(
+                    title = "STORAGE",
+                    icon = Icons.Default.SdStorage,
+                    supporting = scannedAt?.let { "scanned $it" }
+                )
+            }
             items(filteredSections, key = { it.title }) { sec ->
                 InfoSectionCard(section = sec, category = PinnableCategory.STORAGE)
             }
@@ -208,7 +222,13 @@ fun PartitionCard(item: PartitionItem) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp),
-                color = if (item.usedPercent > 90) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                // Severity-tinted: green while healthy, amber as it fills, red when
+                // critically full — the same at-a-glance language as battery health.
+                color = when {
+                    item.usedPercent > 90 -> MaterialTheme.colorScheme.error
+                    item.usedPercent > 75 -> AccentOrange
+                    else -> AccentGreen
+                },
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }

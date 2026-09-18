@@ -1,11 +1,17 @@
 package com.icy.devcheckplus.ui.components
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -118,6 +125,7 @@ fun InfoSectionCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun InfoRowItem(
     item: InfoItem,
@@ -131,11 +139,34 @@ fun InfoRowItem(
     val isMatch = focus.active && (focus.matches(item.title) || focus.matches(item.value) || focus.matches(item.subtitle))
     val highlight = rememberMatchHighlight(active = isMatch, trigger = focus.token)
 
+    // PART 2 — "Copy value" long-press: any data row's current value goes to the
+    // clipboard in one gesture, matching the affordance power users expect from a
+    // system-utility app. Toast feedback, then done — no dialog to dismiss.
+    val context = LocalContext.current
+    val onLongPress = {
+        val text = listOfNotNull(item.title, item.value, item.subtitle)
+            .filter { it.isNotBlank() }
+            .joinToString(": ")
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText(item.title, text))
+            Toast.makeText(context, "Copied \"${item.title}\"", Toast.LENGTH_SHORT).show()
+        } catch (_: Exception) {
+            // Clipboard access can be denied on some locked-down devices; copy is
+            // best-effort, so a refused write just silently does nothing.
+        }
+        Unit
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MatchHighlightShape)
             .background(MaterialTheme.colorScheme.primary.copy(alpha = highlight))
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongPress
+            )
             .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.SpaceBetween

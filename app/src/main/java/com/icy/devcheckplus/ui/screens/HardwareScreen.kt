@@ -47,6 +47,8 @@ import com.icy.devcheckplus.ui.components.rememberLiveGraphsEnabled
 import com.icy.devcheckplus.ui.components.rememberLiveMetricsSnapshot
 import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
 import com.icy.devcheckplus.ui.theme.ChartPalette
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -58,10 +60,12 @@ fun HardwareScreen(
     val context = LocalContext.current
     var sections by remember { mutableStateOf<List<InfoSection>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var scannedAt by remember { mutableStateOf<String?>(null) }
 
     // Static inventory is read once — deliberately no refresh loop here.
     LaunchedEffect(Unit) {
         sections = HardwareDataProvider.getHardwareSections(context)
+        scannedAt = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         loading = false
     }
 
@@ -130,7 +134,11 @@ fun HardwareScreen(
                         MemoryUsageChart()
                     }
                     item(key = "hardware_inventory_header") {
-                        GlassSectionHeader(title = "INVENTORY", icon = Icons.Default.Memory)
+                        GlassSectionHeader(
+                            title = "INVENTORY",
+                            icon = Icons.Default.Memory,
+                            supporting = scannedAt?.let { "scanned $it" }
+                        )
                     }
                 }
                 items(filteredSections, key = { it.title }) { sec ->

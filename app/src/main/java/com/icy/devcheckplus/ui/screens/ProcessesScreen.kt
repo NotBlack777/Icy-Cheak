@@ -19,10 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.ProcessDataProvider
 import com.icy.devcheckplus.model.ProcessItem
 import com.icy.devcheckplus.privilege.PrivilegeManager
+import com.icy.devcheckplus.ui.components.GlassEmptyState
 import com.icy.devcheckplus.ui.components.LocateMatchEffect
 import com.icy.devcheckplus.ui.components.LocalSearchFocus
 import com.icy.devcheckplus.ui.components.SkeletonList
@@ -108,34 +105,17 @@ fun ProcessesScreen(
             // so the first real frame does not jump.
             SkeletonList(count = 7, modifier = Modifier.fillMaxSize())
         } else if (errorMessage != null && processes.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.height(48.dp).width(48.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = errorMessage ?: "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = {
-                        PrivilegeManager.requestShizukuPermission()
-                        loadProcesses()
-                    }) {
-                        Text("Grant Shizuku / Retry")
-                    }
-                }
-            }
+            GlassEmptyState(
+                icon = Icons.Default.Security,
+                title = "Processes unavailable",
+                message = errorMessage ?: "",
+                actionLabel = "Grant Shizuku / Retry",
+                onAction = {
+                    PrivilegeManager.requestShizukuPermission()
+                    loadProcesses()
+                },
+                modifier = Modifier.fillMaxSize()
+            )
         } else {
             val filtered = remember(processes, searchQuery) {
                 if (searchQuery.isBlank()) processes else {
