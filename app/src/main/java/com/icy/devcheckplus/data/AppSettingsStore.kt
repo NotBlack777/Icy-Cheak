@@ -2,6 +2,9 @@ package com.icy.devcheckplus.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.icy.devcheckplus.ui.theme.AccentPreset
+import com.icy.devcheckplus.ui.theme.AmbientStyle
+import com.icy.devcheckplus.ui.theme.SurfaceGradient
 import com.icy.devcheckplus.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +29,11 @@ object AppSettingsStore {
     const val KEY_SEARCH_HISTORY = "pref_search_history"
     const val KEY_HAPTIC_FEEDBACK = "pref_haptic_feedback"
     const val KEY_POLL_INTERVAL = "pref_poll_interval"
+    const val KEY_ACCENT = "pref_accent_argb"
+    const val KEY_SURFACE_GRADIENT = "pref_surface_gradient"
+    const val KEY_AMBIENT_STYLE = "pref_ambient_style"
+    const val KEY_AMBIENT_ON_OLED = "pref_ambient_on_oled"
+    const val KEY_REPORT_SECTIONS = "pref_report_sections"
 
     /** Maximum number of remembered console commands. */
     private const val MAX_CONSOLE_HISTORY = 20
@@ -67,6 +75,23 @@ object AppSettingsStore {
     private val _pollIntervalMs = MutableStateFlow(LiveMetricsRepository.DEFAULT_INTERVAL_MS)
     val pollIntervalMs: StateFlow<Long> = _pollIntervalMs.asStateFlow()
 
+    /** 0L = "not customised": the shipped palette (or Material You) is used. */
+    private val _accentArgb = MutableStateFlow(0L)
+    val accentArgb: StateFlow<Long> = _accentArgb.asStateFlow()
+
+    private val _surfaceGradient = MutableStateFlow(SurfaceGradient.DEFAULT)
+    val surfaceGradient: StateFlow<SurfaceGradient> = _surfaceGradient.asStateFlow()
+
+    private val _ambientStyle = MutableStateFlow(AmbientStyle.DEFAULT)
+    val ambientStyle: StateFlow<AmbientStyle> = _ambientStyle.asStateFlow()
+
+    /** Explicit opt-in to keep the ambient layer alive in OLED mode. */
+    private val _ambientOnOled = MutableStateFlow(false)
+    val ambientOnOled: StateFlow<Boolean> = _ambientOnOled.asStateFlow()
+
+    private val _reportSections = MutableStateFlow(ReportSection.values().toSet())
+    val reportSections: StateFlow<Set<ReportSection>> = _reportSections.asStateFlow()
+
     @Volatile
     private var initialized = false
 
@@ -87,6 +112,13 @@ object AppSettingsStore {
             .coerceIn(LiveMetricsRepository.MIN_INTERVAL_MS, LiveMetricsRepository.MAX_INTERVAL_MS)
         // Apply the persisted cadence before the first subscriber arrives.
         LiveMetricsRepository.setInterval(_pollIntervalMs.value)
+        _accentArgb.value = p.getLong(KEY_ACCENT, 0L)
+        _surfaceGradient.value = SurfaceGradient.fromKey(p.getString(KEY_SURFACE_GRADIENT, null))
+        _ambientStyle.value = AmbientStyle.fromKey(p.getString(KEY_AMBIENT_STYLE, null))
+        _ambientOnOled.value = p.getBoolean(KEY_AMBIENT_ON_OLED, false)
+        _reportSections.value = ReportSection.fromMask(
+            p.getLong(KEY_REPORT_SECTIONS, ReportSection.ALL_MASK)
+        )
         initialized = true
     }
 
@@ -141,6 +173,37 @@ object AppSettingsStore {
         _searchHistory.value = updated
         prefs(context).edit().putString(KEY_SEARCH_HISTORY, updated.joinToString(SEARCH_SEPARATOR)).apply()
     }
+
+    fun setAccent(context: Context, preset: AccentPreset?) {
+        // null clears the override and hands control back to Material You.
+        _accentArgb.value = preset?.argb ?: 0L
+        prefs(context).edit().putLong(KEY_ACCENT, _accentArgb.value).apply()
+    }
+
+    fun setSurfaceGradient(context: Context, gradient: SurfaceGradient) {
+        _surfaceGradient.value = gradient
+        prefs(context).edit().putString(KEY_SURFACE_GRADIENT, gradient.name).apply()
+    }
+
+    fun setAmbientStyle(context: Context, style: AmbientStyle) {
+        _ambientStyle.value = style
+        prefs(context).edit().putString(KEY_AMBIENT_STYLE, style.name).apply()
+    }
+
+    fun setAmbientOnOled(context: Context, enabled: Boolean) {
+        _ambientOnOled.value = enabled
+        prefs(context).edit().putBoolean(KEY_AMBIENT_ON_OLED, enabled).apply()
+    }
+
+    fun setReportSections(context: Context, sections: Set<ReportSection>) {
+        // Never allow an empty report: fall back to everything selected.
+        val effective = if (sections.isEmpty()) ReportSection.values().toSet() else sections
+        _reportSections.value = effective
+        prefs(context).edit().putLong(KEY_REPORT_SECTIONS, ReportSection.toMask(effective)).apply()
+    }
+
+    /** Snapshot for non-composable callers (the report builder). */
+    fun reportSectionsNow(): Set<ReportSection> = _reportSections.value
 
     fun setPollInterval(context: Context, milliseconds: Long) {
         val clamped = milliseconds.coerceIn(

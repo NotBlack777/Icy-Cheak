@@ -28,6 +28,35 @@ enum class ReportFormat(val label: String) {
     JSON("JSON")
 }
 
+/**
+ * The nine blocks the report can contain.
+ *
+ * Persisted as a bitmask (one bit per section) in `devcheck_settings`, edited
+ * from Settings → Export & share → "What is included". [reportTitle] is the
+ * heading used in the rendered output.
+ */
+enum class ReportSection(val label: String, val reportTitle: String, val bit: Long) {
+    HARDWARE("Hardware", "HARDWARE", 1L shl 0),
+    SOFTWARE("Software", "SOFTWARE", 1L shl 1),
+    BATTERY("Battery", "BATTERY", 1L shl 2),
+    STORAGE("Storage", "STORAGE", 1L shl 3),
+    NETWORK("Network", "NETWORK", 1L shl 4),
+    PROCESSES("Processes", "PROCESSES", 1L shl 5),
+    APPS("Installed apps", "INSTALLED APPS", 1L shl 6),
+    SENSORS("Sensors", "SENSORS", 1L shl 7),
+    TELEMETRY("Live telemetry", "LIVE TELEMETRY", 1L shl 8);
+
+    companion object {
+        val ALL_MASK: Long = values().fold(0L) { acc, section -> acc or section.bit }
+
+        fun fromMask(mask: Long): Set<ReportSection> =
+            values().filter { mask and it.bit != 0L }.toSet()
+
+        fun toMask(sections: Set<ReportSection>): Long =
+            sections.fold(0L) { acc, section -> acc or section.bit }
+    }
+}
+
 private data class ReportCategory(
     val name: String,
     val sections: List<InfoSection>
@@ -107,19 +136,42 @@ object DeviceReport {
     /* ------------------------------------------------------------------ */
 
     private suspend fun collect(context: Context): ReportModel = coroutineScope {
-        val telemetry = async { telemetrySections(context) }
-        val hardware = async { guarded(context, "Hardware") { HardwareDataProvider.getHardwareSections(it) } }
-        val software = async { guarded(context, "Software") { SoftwareDataProvider.getSoftwareSections(it) } }
-        val battery = async { guarded(context, "Battery") { BatteryDataProvider.getBatterySections(it) } }
-        val storage = async { guarded(context, "Storage") { storageSections(it) } }
-        val network = async {
-            guarded(context, "Network") {
-                NetworkDataProvider.getNetworkSections(it, AppSettingsStore.publicIpLookupEnabled(it))
+        // Sections deselected in Settings are never collected: no privileged
+        // shell, no sensor sampling window, no package scan for data that would
+        // only be thrown away. That also makes the export visibly faster.
+        val selected = AppSettingsStore.reportSectionsNow()
+
+        val telemetry = if (ReportSection.TELEMETRY in selected) {
+            async { guarded(context, "Live telemetry") { telemetrySections(it) } }
+        } else null
+        val hardware = if (ReportSection.HARDWARE in selected) {
+            async { guarded(context, "Hardware") { HardwareDataProvider.getHardwareSections(it) } }
+        } else null
+        val software = if (ReportSection.SOFTWARE in selected) {
+            async { guarded(context, "Software") { SoftwareDataProvider.getSoftwareSections(it) } }
+        } else null
+        val battery = if (ReportSection.BATTERY in selected) {
+            async { guarded(context, "Battery") { BatteryDataProvider.getBatterySections(it) } }
+        } else null
+        val storage = if (ReportSection.STORAGE in selected) {
+            async { guarded(context, "Storage") { storageSections(it) } }
+        } else null
+        val network = if (ReportSection.NETWORK in selected) {
+            async {
+                guarded(context, "Network") {
+                    NetworkDataProvider.getNetworkSections(it, AppSettingsStore.publicIpLookupEnabled(it))
+                }
             }
-        }
-        val processes = async { guarded(context, "Processes") { processSections(it) } }
-        val apps = async { guarded(context, "Installed apps") { appSections(it) } }
-        val sensors = async { guarded(context, "Sensors") { sensorSections(it) } }
+        } else null
+        val processes = if (ReportSection.PROCESSES in selected) {
+            async { guarded(context, "Processes") { processSections(it) } }
+        } else null
+        val apps = if (ReportSection.APPS in selected) {
+            async { guarded(context, "Installed apps") { appSections(it) } }
+        } else null
+        val sensors = if (ReportSection.SENSORS in selected) {
+            async { guarded(context, "Sensors") { sensorSections(it) } }
+        } else null
 
         val now = Date()
         val zone = TimeZone.getDefault()
@@ -133,16 +185,16 @@ object DeviceReport {
             timeZone = zone.id ?: "unknown",
             device = deviceItems(),
             privilege = privilegeItems(),
-            categories = listOf(
-                ReportCategory("LIVE TELEMETRY", telemetry.await()),
-                ReportCategory("HARDWARE", hardware.await()),
-                ReportCategory("SOFTWARE", software.await()),
-                ReportCategory("BATTERY", battery.await()),
-                ReportCategory("STORAGE", storage.await()),
-                ReportCategory("NETWORK", network.await()),
-                ReportCategory("PROCESSES", processes.await()),
-                ReportCategory("INSTALLED APPS", apps.await()),
-                ReportCategory("SENSORS", sensors.await())
+            categories = listOfNotNull(
+                telemetry?.let { ReportCategory(ReportSection.TELEMETRY.reportTitle, it.await()) },
+                hardware?.let { ReportCategory(ReportSection.HARDWARE.reportTitle, it.await()) },
+                software?.let { ReportCategory(ReportSection.SOFTWARE.reportTitle, it.await()) },
+                battery?.let { ReportCategory(ReportSection.BATTERY.reportTitle, it.await()) },
+                storage?.let { ReportCategory(ReportSection.STORAGE.reportTitle, it.await()) },
+                network?.let { ReportCategory(ReportSection.NETWORK.reportTitle, it.await()) },
+                processes?.let { ReportCategory(ReportSection.PROCESSES.reportTitle, it.await()) },
+                apps?.let { ReportCategory(ReportSection.APPS.reportTitle, it.await()) },
+                sensors?.let { ReportCategory(ReportSection.SENSORS.reportTitle, it.await()) }
             )
         )
     }

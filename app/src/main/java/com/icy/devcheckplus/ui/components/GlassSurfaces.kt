@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -35,12 +36,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.icy.devcheckplus.ui.theme.GlassSpec
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
 
 /**
@@ -68,6 +72,37 @@ import com.icy.devcheckplus.ui.theme.LocalGlassSpec
 val LocalFrostEffect = compositionLocalOf { true }
 
 private val ShadowTint = Color(0xCC000000)
+
+/**
+ * Glass body brush for the user-selected surface gradient.
+ *
+ * `Solid` collapses to one translucent surface colour — no gradient object at
+ * all. Every other preset is blended *over* the theme's own surface tint by the
+ * ramp strength, so cards stay translucent and text contrast is untouched.
+ * Remembered on its inputs: scrolling or a per-second telemetry sample never
+ * rebuilds a brush.
+ */
+@Composable
+private fun rememberSurfaceBrush(spec: GlassSpec, surface: Color): Brush =
+    remember(spec.cardRamp, spec.cardAlpha, surface) {
+        val ramp = spec.cardRamp
+        val base = surface.copy(alpha = spec.cardAlpha)
+        if (ramp.strength <= 0.001f) {
+            SolidColor(base)
+        } else {
+            val top = lerp(
+                surface.copy(alpha = (spec.cardAlpha + 0.10f).coerceAtMost(1f)),
+                ramp.top,
+                ramp.strength
+            )
+            val bottom = lerp(base, ramp.bottom, ramp.strength)
+            if (ramp.diagonal) {
+                Brush.linearGradient(listOf(top, bottom))
+            } else {
+                Brush.verticalGradient(listOf(top, bottom))
+            }
+        }
+    }
 
 @Composable
 fun GlassCard(
@@ -100,18 +135,13 @@ fun GlassCard(
                 modifier = Modifier.matchParentSize()
             )
         }
-        // Semi-transparent surface tint (the "glass" body).
+        // Semi-transparent surface tint (the "glass" body), painted with the
+        // user-selected gradient ramp. Remembered on the inputs that can change
+        // (theme + customisation) so scrolling does not rebuild brushes.
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            scheme.surface.copy(alpha = (spec.cardAlpha + 0.10f).coerceAtMost(1f)),
-                            scheme.surface.copy(alpha = spec.cardAlpha)
-                        )
-                    )
-                )
+                .background(rememberSurfaceBrush(spec = spec, surface = scheme.surface))
         )
         GlassEdges(shape = shape, borderAlpha = spec.borderAlpha, sheenAlpha = spec.sheenAlpha, modifier = Modifier.matchParentSize())
 

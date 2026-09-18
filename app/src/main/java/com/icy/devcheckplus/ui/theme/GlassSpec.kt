@@ -33,7 +33,11 @@ data class GlassSpec(
     val ambientIntensity: Float,
     val particleCount: Int,
     /** Soft glow around chart strokes / selected tiles. */
-    val glow: Boolean
+    val glow: Boolean,
+    /** Resolved card/surface gradient; [GradientRamp.None] means a flat surface. */
+    val cardRamp: GradientRamp = GradientRamp.None,
+    /** Which ambient background the user picked (already resolved for OLED). */
+    val ambientStyle: AmbientStyle = AmbientStyle.GRADIENT_DRIFT
 ) {
     val isOled: Boolean get() = themeMode == ThemeMode.OLED
     val isLight: Boolean get() = themeMode == ThemeMode.LIGHT

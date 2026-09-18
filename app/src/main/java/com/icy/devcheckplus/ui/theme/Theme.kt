@@ -13,6 +13,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +99,29 @@ private val DevCheckTypography = Typography(
 )
 
 /**
+ * Re-tints a scheme around a user-picked accent.
+ *
+ * Only the accent roles move: `primary` becomes the preset, `onPrimary` is
+ * derived from the preset's own luminance (so a lime accent gets black text and
+ * a violet one gets white), the container is a darkened/lightened sibling, and
+ * secondary/tertiary are pulled part-way toward the accent instead of being
+ * replaced — that keeps the charts and tile previews varied rather than
+ * monochrome.
+ */
+private fun ColorScheme.withAccent(accent: Color, dark: Boolean): ColorScheme {
+    val onAccent = if (accent.luminance() > 0.55f) Color.Black else Color.White
+    val container = lerp(accent, if (dark) Color.Black else Color.White, if (dark) 0.72f else 0.80f)
+    return copy(
+        primary = accent,
+        onPrimary = onAccent,
+        primaryContainer = container,
+        onPrimaryContainer = accent,
+        secondary = lerp(accent, secondary, 0.45f),
+        tertiary = lerp(accent, tertiary, 0.30f)
+    )
+}
+
+/**
  * App theme.
  *
  * @param themeMode SYSTEM / LIGHT / DARK / OLED — persisted by `AppSettingsStore`
@@ -109,6 +134,10 @@ private val DevCheckTypography = Typography(
 fun DevCheckPlusTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColor: Boolean = true,
+    accentArgb: Long = 0L,
+    surfaceGradient: SurfaceGradient = SurfaceGradient.DEFAULT,
+    ambientStyle: AmbientStyle = AmbientStyle.DEFAULT,
+    ambientOnOled: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -130,16 +159,49 @@ fun DevCheckPlusTheme(
         else -> LightColorScheme
     }
 
-    val colorScheme = remember(resolvedScheme, isOled) {
-        if (isOled) resolvedScheme.toOledBlack() else resolvedScheme
+    // 0L means "not customised": the shipped palette (or Material You) wins.
+    val accent = remember(accentArgb) { AccentPreset.fromArgb(accentArgb) }
+
+    val colorScheme = remember(resolvedScheme, isOled, accent) {
+        val base = if (isOled) resolvedScheme.toOledBlack() else resolvedScheme
+        if (accent == null) base else base.withAccent(accent.color, dark = useDark)
     }
 
-    val glassSpec = remember(themeMode, useDark) {
-        when {
+    val glassSpec = remember(themeMode, useDark, colorScheme, surfaceGradient, ambientStyle, ambientOnOled) {
+        val base = when {
             isOled -> GlassSpec.Oled
             useDark -> GlassSpec.DeepDark
             else -> GlassSpec.Light
         }
+
+        // OLED forces the ambient layer off unless the user explicitly overrode
+        // it in Settings (the override carries a battery warning).
+        val effectiveAmbient = if (isOled && !ambientOnOled) AmbientStyle.NONE else ambientStyle
+        val ambientEnabled = when {
+            effectiveAmbient == AmbientStyle.NONE -> false
+            isOled -> ambientOnOled
+            else -> base.ambientAnimation
+        }
+
+        // Gradients are a contrast and overdraw liability on true black, so OLED
+        // always renders flat cards; on the light ramp the tint is halved.
+        val ramp = if (isOled || surfaceGradient == SurfaceGradient.SOLID) {
+            GradientRamp.None
+        } else {
+            val resolved = surfaceGradient.ramp(colorScheme.primary)
+            if (useDark) resolved else resolved.copy(strength = resolved.strength * 0.5f)
+        }
+
+        base.copy(
+            cardRamp = ramp,
+            ambientStyle = effectiveAmbient,
+            ambientAnimation = ambientEnabled,
+            particleCount = when (effectiveAmbient) {
+                AmbientStyle.PARTICLES -> (base.particleCount * 3).coerceAtMost(30)
+                AmbientStyle.GRADIENT_DRIFT -> base.particleCount
+                AmbientStyle.NONE -> 0
+            }
+        )
     }
 
     CompositionLocalProvider(LocalGlassSpec provides glassSpec) {

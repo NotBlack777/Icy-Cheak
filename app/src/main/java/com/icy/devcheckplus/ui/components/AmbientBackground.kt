@@ -15,6 +15,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.icy.devcheckplus.ui.theme.AmbientStyle
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -79,6 +80,10 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
         }
     }
 
+    // PARTICLES drops the three screen-sized radial gradients - the expensive
+    // half of this layer - and keeps only the motes, so the style choice is a
+    // performance choice as much as a visual one.
+    val blobsEnabled = spec.ambientStyle == AmbientStyle.GRADIENT_DRIFT
     val particles = remember(spec.particleCount) { buildParticles(spec.particleCount) }
     val intensity = spec.ambientIntensity
     val primary = scheme.primary
@@ -98,36 +103,38 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
 
         drawRect(brush = baseBrush)
 
-        drawBlob(
-            color = primary,
-            alpha = 0.17f * intensity,
-            phase = a,
-            anchorX = 0.16f,
-            anchorY = 0.12f,
-            travelX = 0.12f,
-            travelY = 0.07f,
-            radiusFactor = 0.85f
-        )
-        drawBlob(
-            color = tertiary,
-            alpha = 0.13f * intensity,
-            phase = b,
-            anchorX = 0.86f,
-            anchorY = 0.42f,
-            travelX = -0.10f,
-            travelY = 0.12f,
-            radiusFactor = 0.72f
-        )
-        drawBlob(
-            color = secondary,
-            alpha = 0.11f * intensity,
-            phase = c,
-            anchorX = 0.34f,
-            anchorY = 0.88f,
-            travelX = 0.14f,
-            travelY = -0.06f,
-            radiusFactor = 0.62f
-        )
+        if (blobsEnabled) {
+            drawBlob(
+                color = primary,
+                alpha = 0.17f * intensity,
+                phase = a,
+                anchorX = 0.16f,
+                anchorY = 0.12f,
+                travelX = 0.12f,
+                travelY = 0.07f,
+                radiusFactor = 0.85f
+            )
+            drawBlob(
+                color = tertiary,
+                alpha = 0.13f * intensity,
+                phase = b,
+                anchorX = 0.86f,
+                anchorY = 0.42f,
+                travelX = -0.10f,
+                travelY = 0.12f,
+                radiusFactor = 0.72f
+            )
+            drawBlob(
+                color = secondary,
+                alpha = 0.11f * intensity,
+                phase = c,
+                anchorX = 0.34f,
+                anchorY = 0.88f,
+                travelX = 0.14f,
+                travelY = -0.06f,
+                radiusFactor = 0.62f
+            )
+        }
 
         if (particles.isNotEmpty()) {
             particles.forEach { p ->

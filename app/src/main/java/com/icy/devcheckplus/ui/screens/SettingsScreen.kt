@@ -2,12 +2,14 @@ package com.icy.devcheckplus.ui.screens
 
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,10 +35,12 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -58,6 +62,8 @@ import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.BuildConfig
 import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.data.LiveMetricsRepository
+import com.icy.devcheckplus.data.ReportSection
+import com.icy.devcheckplus.data.formatSamplingInterval
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import com.icy.devcheckplus.privilege.PrivilegeStatus
@@ -65,9 +71,9 @@ import com.icy.devcheckplus.ui.components.AmbientBackground
 import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassRow
+import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.HapticSwitch
 import com.icy.devcheckplus.ui.components.LocalFrostEffect
-import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.SelectableTile
 import com.icy.devcheckplus.ui.components.ThemeModePreview
 import com.icy.devcheckplus.ui.components.TileGrid
@@ -97,6 +103,12 @@ fun SettingsScreen(
     val themeMode by AppSettingsStore.themeMode.collectAsState()
     val dynamicColor by AppSettingsStore.dynamicColor.collectAsState()
     val hapticFeedback by AppSettingsStore.hapticFeedback.collectAsState()
+    val pollIntervalMs by AppSettingsStore.pollIntervalMs.collectAsState()
+    val accentArgb by AppSettingsStore.accentArgb.collectAsState()
+    val surfaceGradient by AppSettingsStore.surfaceGradient.collectAsState()
+    val ambientStyle by AppSettingsStore.ambientStyle.collectAsState()
+    val ambientOnOled by AppSettingsStore.ambientOnOled.collectAsState()
+    val reportSections by AppSettingsStore.reportSections.collectAsState()
     val publicIpLookup by AppSettingsStore.publicIpLookup.collectAsState()
     var showExportDialog by remember { mutableStateOf(false) }
 
@@ -145,6 +157,32 @@ fun SettingsScreen(
                 )
             }
 
+            item(key = "header_colors") {
+                GlassSectionHeader(title = "COLORS", icon = Icons.Default.Palette)
+            }
+            item(key = "card_colors") {
+                ColorsCard(
+                    accentArgb = accentArgb,
+                    dynamicColor = dynamicColor,
+                    gradient = surfaceGradient,
+                    onAccentChange = { AppSettingsStore.setAccent(context, it) },
+                    onGradientChange = { AppSettingsStore.setSurfaceGradient(context, it) }
+                )
+            }
+
+            item(key = "header_ambient") {
+                GlassSectionHeader(title = "BACKGROUND ANIMATION", icon = Icons.Default.AutoAwesome)
+            }
+            item(key = "card_ambient") {
+                AmbientCard(
+                    style = ambientStyle,
+                    themeMode = themeMode,
+                    oledOverride = ambientOnOled,
+                    onStyleChange = { AppSettingsStore.setAmbientStyle(context, it) },
+                    onOledOverrideChange = { AppSettingsStore.setAmbientOnOled(context, it) }
+                )
+            }
+
             item(key = "header_privilege") {
                 GlassSectionHeader(title = "PRIVILEGE ENGINE", icon = Icons.Default.Lock)
             }
@@ -158,7 +196,9 @@ fun SettingsScreen(
             item(key = "card_privacy") {
                 PrivacyCard(
                     publicIpLookup = publicIpLookup,
-                    onPublicIpChange = { AppSettingsStore.setPublicIpLookup(context, it) }
+                    onPublicIpChange = { AppSettingsStore.setPublicIpLookup(context, it) },
+                    pollIntervalMs = pollIntervalMs,
+                    onPollIntervalChange = { AppSettingsStore.setPollInterval(context, it) }
                 )
             }
 
@@ -173,7 +213,21 @@ fun SettingsScreen(
                 GlassSectionHeader(title = "EXPORT & SHARE", icon = Icons.Default.Share)
             }
             item(key = "card_export") {
-                ExportCard(onExport = { showExportDialog = true })
+                ExportCard(
+                    onExport = { showExportDialog = true },
+                    reportSections = reportSections,
+                    onToggleSection = { section ->
+                        val updated: Set<ReportSection> = if (section in reportSections) {
+                            reportSections - section
+                        } else {
+                            reportSections + section
+                        }
+                        AppSettingsStore.setReportSections(context, updated)
+                    },
+                    onAllSections = {
+                        AppSettingsStore.setReportSections(context, ReportSection.values().toSet())
+                    }
+                )
             }
 
             item(key = "header_about") {
@@ -206,6 +260,8 @@ fun SettingsScreen(
 @Composable
 private fun SettingsHeader(status: PrivilegeStatus) {
     val scheme = MaterialTheme.colorScheme
+    var showPrivilegeInfo by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -240,12 +296,72 @@ private fun SettingsHeader(status: PrivilegeStatus) {
                 color = scheme.onSurfaceVariant
             )
         }
-        StatusPill(status = status)
+        StatusPill(status = status, onClick = { showPrivilegeInfo = true })
+    }
+
+    if (showPrivilegeInfo) {
+        PrivilegeInfoDialog(status = status, onDismiss = { showPrivilegeInfo = false })
+    }
+}
+
+/** What the status pill means: which elevation paths are actually reachable. */
+@Composable
+private fun PrivilegeInfoDialog(status: PrivilegeStatus, onDismiss: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = MaterialTheme.shapes.large,
+        containerColor = scheme.surface,
+        title = { Text("Elevation status", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column {
+                PrivilegeInfoRow("Root binary detected", status.rootAvailable)
+                PrivilegeInfoRow("Root granted to DevCheck+", status.rootGranted)
+                PrivilegeInfoRow("Shizuku service running", status.shizukuRunning)
+                PrivilegeInfoRow("Shizuku permission granted", status.shizukuGranted)
+                PrivilegeInfoRow(
+                    "Active mode: ${status.activeMode.name}",
+                    status.activeMode != PrivilegeMode.NONE
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Pick a mode in Privilege engine to change what the app uses.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    lineHeight = 16.sp
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+@Composable
+private fun PrivilegeInfoRow(label: String, ok: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(7.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(if (ok) AccentGreen else scheme.onSurfaceVariant.copy(alpha = 0.45f))
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurface
+        )
     }
 }
 
 @Composable
-private fun StatusPill(status: PrivilegeStatus) {
+private fun StatusPill(status: PrivilegeStatus, onClick: (() -> Unit)? = null) {
     val scheme = MaterialTheme.colorScheme
     val granted = status.activeMode == PrivilegeMode.ROOT || status.activeMode == PrivilegeMode.SHIZUKU
     val color = when {
@@ -253,10 +369,22 @@ private fun StatusPill(status: PrivilegeStatus) {
         status.rootAvailable || status.shizukuRunning -> AccentOrange
         else -> scheme.onSurfaceVariant
     }
+    val click = onClick
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
             .background(color.copy(alpha = 0.14f))
+            // Only the interactive variant gets a hit area; the padded minimum
+            // keeps it at a usable touch target without inflating the pill.
+            .then(
+                if (click != null) {
+                    Modifier
+                        .defaultMinSize(minHeight = 40.dp)
+                        .clickable { click() }
+                } else {
+                    Modifier
+                }
+            )
             .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -479,7 +607,9 @@ private fun PrivilegeCard(
 @Composable
 private fun PrivacyCard(
     publicIpLookup: Boolean,
-    onPublicIpChange: (Boolean) -> Unit
+    onPublicIpChange: (Boolean) -> Unit,
+    pollIntervalMs: Long,
+    onPollIntervalChange: (Long) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
@@ -500,17 +630,40 @@ private fun PrivacyCard(
             thickness = 0.8.dp
         )
 
+        var showIntervalSheet by remember { mutableStateOf(false) }
+
         GlassRow(
             title = "Live telemetry polling",
             icon = Icons.Default.Speed,
-            subtitle = "CPU, RAM and battery charts sample once per second, only while the tab is visible, and pause in the background.",
-            trailing = { PillLabel(text = "1 s") }
+            subtitle = "CPU, RAM and battery charts sample every " +
+                formatSamplingInterval(pollIntervalMs) +
+                ", only while a chart is on screen, and stop completely when the app is backgrounded.",
+            onClick = { showIntervalSheet = true },
+            trailing = {
+                SettingsPillButton(
+                    text = formatSamplingInterval(pollIntervalMs),
+                    onClick = { showIntervalSheet = true }
+                )
+            }
         )
+
+        if (showIntervalSheet) {
+            PollingIntervalSheet(
+                currentMillis = pollIntervalMs,
+                onDismiss = { showIntervalSheet = false },
+                onSelect = onPollIntervalChange
+            )
+        }
     }
 }
 
 @Composable
-private fun ExportCard(onExport: () -> Unit) {
+private fun ExportCard(
+    onExport: () -> Unit,
+    reportSections: Set<ReportSection>,
+    onToggleSection: (ReportSection) -> Unit,
+    onAllSections: () -> Unit
+) {
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
 
@@ -536,12 +689,37 @@ private fun ExportCard(onExport: () -> Unit) {
             thickness = 0.8.dp
         )
 
+        var showSectionsSheet by remember { mutableStateOf(false) }
+        val totalSections = ReportSection.values().size
+        val summary = remember(reportSections) {
+            ReportSection.values().filter { it in reportSections }.joinToString(" • ") { it.label }
+        }
+
         GlassRow(
             title = "What is included",
             icon = Icons.Default.Info,
-            subtitle = "Hardware • Software • Battery • Storage • Network • Processes • Installed apps • Sensors • live telemetry, plus app version, device fingerprint and export timestamp.",
-            trailing = { PillLabel(text = "9 sections") }
+            subtitle = if (reportSections.size == totalSections) {
+                "All $totalSections sections: $summary, plus app version, device fingerprint and export timestamp."
+            } else {
+                "${reportSections.size} of $totalSections sections: $summary. Unticked sections are never collected."
+            },
+            onClick = { showSectionsSheet = true },
+            trailing = {
+                SettingsPillButton(
+                    text = "${reportSections.size} sections",
+                    onClick = { showSectionsSheet = true }
+                )
+            }
         )
+
+        if (showSectionsSheet) {
+            ReportSectionsSheet(
+                selected = reportSections,
+                onDismiss = { showSectionsSheet = false },
+                onToggle = onToggleSection,
+                onSelectAll = onAllSections
+            )
+        }
     }
 }
 
@@ -667,7 +845,7 @@ private fun InfoPill(label: String, value: String, modifier: Modifier = Modifier
 
 /** Tinted explanation strip shown under a tile grid. */
 @Composable
-private fun DetailNote(text: String) {
+internal fun DetailNote(text: String) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -693,20 +871,3 @@ private fun DetailNote(text: String) {
     }
 }
 
-@Composable
-private fun PillLabel(text: String) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(percent = 50))
-            .background(scheme.primary.copy(alpha = 0.14f))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-    ) {
-        Text(
-            text = text,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = scheme.primary
-        )
-    }
-}

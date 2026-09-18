@@ -96,8 +96,19 @@ class MainActivity : ComponentActivity() {
             // theme change in Settings is applied app-wide on the next frame.
             val themeMode by AppSettingsStore.themeMode.collectAsState()
             val dynamicColor by AppSettingsStore.dynamicColor.collectAsState()
+            val accentArgb by AppSettingsStore.accentArgb.collectAsState()
+            val surfaceGradient by AppSettingsStore.surfaceGradient.collectAsState()
+            val ambientStyle by AppSettingsStore.ambientStyle.collectAsState()
+            val ambientOnOled by AppSettingsStore.ambientOnOled.collectAsState()
 
-            DevCheckPlusTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
+            DevCheckPlusTheme(
+                themeMode = themeMode,
+                dynamicColor = dynamicColor,
+                accentArgb = accentArgb,
+                surfaceGradient = surfaceGradient,
+                ambientStyle = ambientStyle,
+                ambientOnOled = ambientOnOled
+            ) {
                 MainAppContainer()
             }
         }
