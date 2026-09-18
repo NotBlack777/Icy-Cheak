@@ -63,10 +63,11 @@ class MetricsWidgetProvider : AppWidgetProvider() {
         fun refreshAll(context: Context) {
             try {
                 val manager = AppWidgetManager.getInstance(context) ?: return
-                val ids = manager.getAppWidgetIds(
+                val ids: IntArray? = manager.getAppWidgetIds(
                     ComponentName(context, MetricsWidgetProvider::class.java)
                 )
-                if (ids.isNullOrEmpty()) {
+                // NB: IntArray has no isNullOrEmpty() in the stdlib - only Array<out T> does.
+                if (ids == null || ids.isEmpty()) {
                     // Nothing placed: stop ticking until a widget is added again.
                     WidgetRefreshScheduler.cancel(context)
                     return
