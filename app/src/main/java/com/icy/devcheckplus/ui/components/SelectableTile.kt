@@ -125,23 +125,16 @@ fun SelectableTile(
         label = "tileLabelColor"
     )
 
-    // Flat while scrolling, gradient at rest — the same cross-fade the cards use.
+    // FIXED: Base gradient always visible, even during scroll.
+    // Only expensive glow/shadow is reduced via fidelity, not the gradient itself.
     val flatTint = scheme.surface.copy(alpha = (spec.cardAlpha * 0.75f).coerceIn(0f, 1f))
-    val tileBrush = remember(containerTint, scheme, spec.cardAlpha, fidelity) {
-        if (fidelity <= 0.01f) {
-            Brush.verticalGradient(listOf(flatTint, flatTint))
-        } else {
-            Brush.verticalGradient(
-                listOf(
-                    lerp(flatTint, containerTint, fidelity),
-                    lerp(
-                        flatTint,
-                        scheme.surface.copy(alpha = (spec.cardAlpha * 0.5f).coerceIn(0f, 1f)),
-                        fidelity
-                    )
-                )
+    val tileBrush = remember(containerTint, scheme, spec.cardAlpha) {
+        Brush.verticalGradient(
+            listOf(
+                containerTint,
+                scheme.surface.copy(alpha = (spec.cardAlpha * 0.5f).coerceIn(0f, 1f))
             )
-        }
+        )
     }
 
     val description = "$label${supporting?.let { ", $it" } ?: ""}${if (selected) ", selected" else ""}"
@@ -151,10 +144,9 @@ fun SelectableTile(
 
     Box(
         modifier = modifier
-            // No selection glow shadow while the list is flinging: it is another
-            // offscreen layer per tile, and fidelity is already 0 by then.
+            // Glow shadow reduced during scroll (expensive offscreen layer) but base gradient stays.
             .shadow(
-                elevation = 10.dp * glow * fidelity,
+                elevation = 10.dp * glow * (0.2f + 0.8f * fidelity),
                 shape = shape,
                 clip = false,
                 ambientColor = scheme.primary,

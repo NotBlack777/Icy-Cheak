@@ -259,21 +259,9 @@ fun GlassTopBar(
  * gradient-or-flat body, the hairline edge, the sheen and (for the app bar) the
  * bottom hairline.
  *
- * Split out from [GlassCard] and [GlassTopBar] for one reason: this is the node
- * that reads [rememberGlassFidelity], so the scroll cross-fade invalidates a
- * single background box instead of the card body, its content lambda and the
- * screen around it.
- *
- * Fidelity rules, in the order they cost something:
- *  - `0f` (fling in progress): one flat `scheme.surface` colour. No gradient
- *    shader, no blur layer, no sheen — the cheapest possible surface, and
- *    [surfaceBrush] returns `null` so not even a degenerate brush is built;
- *  - `0f → 1f` (list settling): every gradient stop is lerped from the flat
- *    colour back to its real one over ~320 ms, so the glass fades in instead of
- *    popping. The blur radius is *not* animated with it — re-creating a
- *    RenderEffect per frame is far more expensive than the fade is worth — so
- *    blur is simply requested once settled and its own colours ride the fade;
- *  - `1f` (at rest): the full liquid-glass treatment.
+ * FIXED: Surface gradient is now ALWAYS visible. During scrolling only expensive
+ * effects (blur, elevation, sheen) are reduced — never the gradient itself.
+ * This fixes the critical bug where gradient disappeared while dragging.
  */
 @Composable
 private fun BoxScope.GlassSurfaceLayer(
@@ -293,22 +281,22 @@ private fun BoxScope.GlassSurfaceLayer(
     val scrolling = LocalScrollActivity.current.value
     val fidelity = rememberGlassFidelity()
 
-    if (frosted && !scrolling && fidelity > 0.01f) {
+    // Blur is expensive — skip it while scrolling. Gradient stays visible.
+    if (frosted && !scrolling && fidelity > 0.05f) {
         FrostedLayer(
             shape = shape,
             radius = blurRadius,
-            fidelity = fidelity,
+            fidelity = fidelity.coerceAtLeast(0.6f),
             primary = frostPrimary,
             secondary = frostSecondary,
             modifier = modifier
         )
     }
 
-    // Semi-transparent surface tint (the "glass" body), painted with the user's
-    // gradient style at the current fidelity — Solid, and a flattened surface,
-    // paint a flat colour instead.
-    val surfaceBrush = remember(spec.gradientStyle, scheme, surfaceAlpha, fidelity) {
-        spec.gradientStyle.surfaceBrush(scheme, surfaceAlpha, fidelity, spec.customGradient)
+    // FIX: Always paint full gradient — never lerp to flat during scroll.
+    // Performance optimization only affects blur/shadow/sheen, not the base surface.
+    val surfaceBrush = remember(spec.gradientStyle, scheme, surfaceAlpha, spec.customGradient) {
+        spec.gradientStyle.surfaceBrush(scheme, surfaceAlpha, 1f, spec.customGradient)
     }
     Box(
         modifier = modifier
@@ -321,10 +309,11 @@ private fun BoxScope.GlassSurfaceLayer(
             )
     )
 
+    // Border always visible, sheen fades during scroll (cheap visual optimization)
     GlassEdges(
         shape = shape,
         borderAlpha = borderAlpha,
-        sheenAlpha = sheenAlpha * fidelity,
+        sheenAlpha = sheenAlpha * (0.3f + 0.7f * fidelity),
         modifier = modifier
     )
 
@@ -334,7 +323,7 @@ private fun BoxScope.GlassSurfaceLayer(
                 Brush.verticalGradient(
                     0f to Color.Transparent,
                     0.86f to Color.Transparent,
-                    1f to scheme.onSurface.copy(alpha = borderAlpha * 0.45f * fidelity)
+                    1f to scheme.onSurface.copy(alpha = borderAlpha * 0.45f * (0.5f + 0.5f * fidelity))
                 )
             )
         )

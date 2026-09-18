@@ -20,10 +20,7 @@ import java.io.InputStreamReader
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Shared fallback wording for data items that need elevation. */
 const val UNAVAILABLE_NEEDS_PRIVILEGE = "Unavailable — requires root or Shizuku"
-
-/** Shown instead when a watchdog fired before the shell answered. */
 const val UNAVAILABLE_TIMED_OUT = "Unavailable — request timed out"
 
 data class PrivilegeStatus(
@@ -41,10 +38,8 @@ data class ShellExecutionResult(
     val stdout: List<String>,
     val stderr: List<String>,
     val executionSource: String,
-    /** True when a watchdog fired before the shell answered. */
     val timedOut: Boolean = false
 ) {
-    /** Convenience fallback text for UI items backed by this call. */
     val unavailableText: String
         get() = if (timedOut) UNAVAILABLE_TIMED_OUT else UNAVAILABLE_NEEDS_PRIVILEGE
 }
@@ -55,19 +50,11 @@ object PrivilegeManager {
     private const val KEY_ONBOARDING_DONE = "pref_onboarding_completed"
     private const val SHIZUKU_REQUEST_CODE = 4001
 
-    /** Watchdog applied to every privileged call unless the caller overrides it. */
     const val DEFAULT_COMMAND_TIMEOUT_MS = 10_000L
-
-    /** Interactive grant — the user may need a moment to answer the su prompt. */
     const val ROOT_REQUEST_TIMEOUT_MS = 25_000L
-
-    /** su / Shizuku availability probe. */
     const val STATUS_PROBE_TIMEOUT_MS = 15_000L
 
-    /** Watchdog trips tolerated before further calls fail fast. */
     private const val CIRCUIT_TRIP_THRESHOLD = 2
-
-    /** How long calls keep failing fast once the circuit is open. */
     private const val CIRCUIT_COOLDOWN_MS = 10_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -81,6 +68,9 @@ object PrivilegeManager {
 
     private var shizukuPermissionListenerRegistered = false
 
+    // Track active processes for cleanup on timeout
+    private val activeProcesses = java.util.Collections.synchronizedList(mutableListOf<Process>())
+
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val modeStr = prefs.getString(KEY_PREFERRED_MODE, PrivilegeMode.AUTO.name) ?: PrivilegeMode.AUTO.name
@@ -89,7 +79,6 @@ object PrivilegeManager {
         } catch (_: Exception) {
             PrivilegeMode.AUTO
         }
-
         setupShizukuListener()
         refreshStatus(context, preferredMode)
     }
@@ -108,8 +97,7 @@ object PrivilegeManager {
                     }
                 }
                 shizukuPermissionListenerRegistered = true
-            } catch (_: Throwable) {
-            }
+            } catch (_: Throwable) {}
         }
     }
 
@@ -126,19 +114,10 @@ object PrivilegeManager {
     fun setPreferredMode(context: Context, mode: PrivilegeMode) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_PREFERRED_MODE, mode.name).apply()
-        // A different engine may answer even though the previous one hung.
         resetWatchdog()
         refreshStatus(context, mode)
     }
 
-    /**
-     * Applies [preferred] immediately from cached flags, then re-probes root and
-     * Shizuku off the main thread behind [STATUS_PROBE_TIMEOUT_MS].
-     *
-     * Probing calls `Shell.isAppGrantedRoot()`, which can block while libsu waits
-     * for an unanswered su prompt — that must never happen on the UI thread or
-     * during `Application.onCreate()`.
-     */
     fun refreshStatus(context: Context, preferred: PrivilegeMode? = null) {
         val pref = preferred ?: _status.value.preferredMode
         val cached = _status.value
@@ -146,15 +125,12 @@ object PrivilegeManager {
             preferredMode = pref,
             activeMode = resolveActiveMode(cached.rootGranted, cached.shizukuGranted, pref)
         )
-
         scope.launch {
             val probed = try {
                 withHardTimeout(STATUS_PROBE_TIMEOUT_MS) { probePrivileges() }
             } catch (t: Throwable) {
                 null
             } ?: return@launch
-
-            // Honour a preferred-mode change that happened while probing.
             val current = _status.value
             _status.value = probed.copy(
                 preferredMode = current.preferredMode,
@@ -163,11 +139,8 @@ object PrivilegeManager {
         }
     }
 
-    /** Blocking availability probe — always called on [Dispatchers.IO]. */
     private fun probePrivileges(): PrivilegeStatus {
         val pref = _status.value.preferredMode
-
-        // 1. Shizuku check
         var shizukuRunning = false
         var shizukuGranted = false
         try {
@@ -179,8 +152,6 @@ object PrivilegeManager {
             shizukuRunning = false
             shizukuGranted = false
         }
-
-        // 2. Root check via libsu
         var rootAvailable = false
         var rootGranted = false
         try {
@@ -196,9 +167,7 @@ object PrivilegeManager {
             rootAvailable = false
             rootGranted = false
         }
-
         val active = resolveActiveMode(rootGranted, shizukuGranted, pref)
-
         return PrivilegeStatus(
             rootAvailable = rootAvailable,
             rootGranted = rootGranted,
@@ -209,16 +178,10 @@ object PrivilegeManager {
         )
     }
 
-    /**
-     * Asks libsu for a root shell. Guarded by [ROOT_REQUEST_TIMEOUT_MS]: an
-     * unanswered superuser prompt releases the UI instead of hanging it, and the
-     * cached status is left untouched so a later probe can still succeed.
-     */
     suspend fun requestRootAccess(): Boolean = withContext(Dispatchers.IO) {
         try {
             val granted = withHardTimeout(ROOT_REQUEST_TIMEOUT_MS) { Shell.getShell().isRoot }
             if (granted == null) return@withContext _status.value.rootGranted
-
             val current = _status.value
             _status.value = current.copy(
                 rootAvailable = true,
@@ -274,16 +237,6 @@ object PrivilegeManager {
         return paths.any { java.io.File(it).exists() }
     }
 
-    /**
-     * Runs [command] through the active privilege mode behind a hard watchdog.
-     *
-     * The call always returns within roughly [timeoutMs] — a hung shell releases
-     * the caller with `timedOut = true` (the underlying blocking read may still
-     * finish in the background, but nothing in the app waits for it). After
-     * [CIRCUIT_TRIP_THRESHOLD] consecutive timeouts the circuit opens for
-     * [CIRCUIT_COOLDOWN_MS] and further calls fail fast, which keeps loops such
-     * as the per-core frequency reader from stacking timeouts.
-     */
     suspend fun executeCommand(
         command: String,
         timeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS
@@ -291,7 +244,6 @@ object PrivilegeManager {
         if (SystemClock.elapsedRealtime() < circuitOpenUntil) {
             return timeoutResult(timeoutMs, "shell circuit open")
         }
-
         val outcome = withHardTimeout(timeoutMs) { executeCommandInternal(command) }
         if (outcome == null) {
             if (consecutiveTimeouts.incrementAndGet() >= CIRCUIT_TRIP_THRESHOLD) {
@@ -304,21 +256,14 @@ object PrivilegeManager {
         return outcome
     }
 
-    /** Clears the watchdog circuit — call after changing privilege mode. */
     fun resetWatchdog() {
         consecutiveTimeouts.set(0)
         circuitOpenUntil = 0L
     }
 
     /**
-     * Runs blocking work on IO and *stops waiting* for it after [timeoutMs].
-     *
-     * A hung `Shell.cmd(...).exec()` or su prompt cannot be interrupted
-     * cooperatively, so a plain `withTimeoutOrNull` around it would still block
-     * the caller until the call returned. Handing the work to a child of this
-     * object's own scope and awaiting it inside `withTimeout` releases the caller
-     * on time; the abandoned work simply finishes (or dies with the shell) in the
-     * background.
+     * FIXED: Hard timeout now cleans up abandoned processes to prevent accumulation.
+     * Previously timed-out tasks left processes running in background.
      */
     private suspend fun <T> withHardTimeout(timeoutMs: Long, block: suspend () -> T): T? {
         val deferred = scope.async(Dispatchers.IO) { block() }
@@ -326,6 +271,20 @@ object PrivilegeManager {
             withTimeout(timeoutMs) { deferred.await() }
         } catch (timeout: TimeoutCancellationException) {
             deferred.cancel()
+            try {
+                synchronized(activeProcesses) {
+                    activeProcesses.forEach { proc ->
+                        try {
+                            if (proc.isAlive) {
+                                proc.destroy()
+                                Thread.sleep(50)
+                                if (proc.isAlive) proc.destroyForcibly()
+                            }
+                        } catch (_: Throwable) {}
+                    }
+                    activeProcesses.clear()
+                }
+            } catch (_: Throwable) {}
             null
         }
     }
@@ -342,8 +301,6 @@ object PrivilegeManager {
     private suspend fun executeCommandInternal(command: String): ShellExecutionResult = withContext(Dispatchers.IO) {
         val current = _status.value
         val mode = current.activeMode
-
-        // Try primary selected mode first
         if (mode == PrivilegeMode.ROOT) {
             val rootRes = executeViaRoot(command)
             if (rootRes.isSuccess) return@withContext rootRes
@@ -351,8 +308,6 @@ object PrivilegeManager {
             val shizukuRes = executeViaShizuku(command)
             if (shizukuRes.isSuccess) return@withContext shizukuRes
         }
-
-        // If Auto or primary failed, attempt alternate privilege if available
         if (current.preferredMode == PrivilegeMode.AUTO) {
             if (current.shizukuGranted && mode != PrivilegeMode.SHIZUKU) {
                 val shizukuRes = executeViaShizuku(command)
@@ -363,8 +318,6 @@ object PrivilegeManager {
                 if (rootRes.isSuccess) return@withContext rootRes
             }
         }
-
-        // Fallback to standard app unprivileged process
         executeStandard(command)
     }
 
@@ -389,7 +342,12 @@ object PrivilegeManager {
         }
     }
 
+    /**
+     * FIXED: Concurrent stdout/stderr reading to avoid deadlock.
+     * Previously sequential reading could deadlock when stderr buffer filled while reading stdout.
+     */
     private fun executeViaShizuku(command: String): ShellExecutionResult {
+        var process: Process? = null
         return try {
             val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
             val newProcessMethod: Method = shizukuClass.getDeclaredMethod(
@@ -399,20 +357,33 @@ object PrivilegeManager {
                 String::class.java
             )
             newProcessMethod.isAccessible = true
-
             val cmdArray = arrayOf("sh", "-c", command)
-            val process = newProcessMethod.invoke(null, cmdArray, null, null) as Process
+            process = newProcessMethod.invoke(null, cmdArray, null, null) as Process
+            synchronized(activeProcesses) { activeProcesses.add(process) }
 
             val stdoutLines = mutableListOf<String>()
             val stderrLines = mutableListOf<String>()
 
-            val stdoutReader = BufferedReader(InputStreamReader(process.inputStream))
-            val stderrReader = BufferedReader(InputStreamReader(process.errorStream))
-
-            stdoutReader.useLines { lines -> lines.forEach { stdoutLines.add(it) } }
-            stderrReader.useLines { lines -> lines.forEach { stderrLines.add(it) } }
+            val stdoutThread = Thread {
+                try {
+                    BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
+                        lines.forEach { stdoutLines.add(it) }
+                    }
+                } catch (_: Throwable) {}
+            }
+            val stderrThread = Thread {
+                try {
+                    BufferedReader(InputStreamReader(process.errorStream)).useLines { lines ->
+                        lines.forEach { stderrLines.add(it) }
+                    }
+                } catch (_: Throwable) {}
+            }
+            stdoutThread.start()
+            stderrThread.start()
 
             val exitCode = process.waitFor()
+            stdoutThread.join(2000)
+            stderrThread.join(2000)
 
             ShellExecutionResult(
                 isSuccess = exitCode == 0,
@@ -429,22 +400,47 @@ object PrivilegeManager {
                 stderr = listOf("Shizuku execution failed: ${e.message}"),
                 executionSource = "Shizuku"
             )
+        } finally {
+            try {
+                if (process != null) {
+                    synchronized(activeProcesses) { activeProcesses.remove(process) }
+                    process.destroy()
+                    Thread.sleep(50)
+                    if (process.isAlive) process.destroyForcibly()
+                }
+            } catch (_: Throwable) {}
         }
     }
 
     private fun executeStandard(command: String): ShellExecutionResult {
+        var process: Process? = null
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            synchronized(activeProcesses) { activeProcesses.add(process) }
+
             val stdoutLines = mutableListOf<String>()
             val stderrLines = mutableListOf<String>()
 
-            val stdoutReader = BufferedReader(InputStreamReader(process.inputStream))
-            val stderrReader = BufferedReader(InputStreamReader(process.errorStream))
-
-            stdoutReader.useLines { lines -> lines.forEach { stdoutLines.add(it) } }
-            stderrReader.useLines { lines -> lines.forEach { stderrLines.add(it) } }
+            val stdoutThread = Thread {
+                try {
+                    BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
+                        lines.forEach { stdoutLines.add(it) }
+                    }
+                } catch (_: Throwable) {}
+            }
+            val stderrThread = Thread {
+                try {
+                    BufferedReader(InputStreamReader(process.errorStream)).useLines { lines ->
+                        lines.forEach { stderrLines.add(it) }
+                    }
+                } catch (_: Throwable) {}
+            }
+            stdoutThread.start()
+            stderrThread.start()
 
             val exitVal = process.waitFor()
+            stdoutThread.join(2000)
+            stderrThread.join(2000)
 
             ShellExecutionResult(
                 isSuccess = exitVal == 0,
@@ -461,6 +457,15 @@ object PrivilegeManager {
                 stderr = listOf("Execution failed: ${e.message}"),
                 executionSource = "Standard (Non-privileged)"
             )
+        } finally {
+            try {
+                if (process != null) {
+                    synchronized(activeProcesses) { activeProcesses.remove(process) }
+                    process.destroy()
+                    Thread.sleep(50)
+                    if (process.isAlive) process.destroyForcibly()
+                }
+            } catch (_: Throwable) {}
         }
     }
 }

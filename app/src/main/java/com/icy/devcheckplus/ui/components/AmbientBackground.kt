@@ -66,14 +66,11 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val foreground = rememberIsForeground()
     val scrolling = LocalScrollActivity.current.value
-    // Quantised on purpose: this is a full-screen canvas, so the fade back in
-    // costs four repaints instead of one per animation frame.
-    val fidelity = rememberGlassFidelityStep()
+    // FIX: Use full fidelity for base, reduced only for blobs during scroll
+    val fidelity = rememberGlassFidelity()
 
-    // The static layer: painted once, never part of an animated frame. It follows
-    // the user's gradient style, so "Solid" also flattens the backdrop. It is
-    // deliberately *not* faded with the scroll fidelity — repainting the whole
-    // screen per frame to remove a static wash would cost more than it saves.
+    // Static layer: always visible, never part of animated frame. Follows user's gradient style.
+    // FIX: Always at full fidelity — background must actually appear and stay behind content.
     val baseBrush = remember(scheme, spec.gradientStyle, spec.customGradient, spec.isOled) {
         spec.gradientStyle.ambientBrush(scheme, spec.isOled, custom = spec.customGradient)
     }
@@ -83,18 +80,19 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
         spec.ambientIntensity > 0.001f &&
         foreground
 
-    // Once the fade has run out (mid-fling) the canvas is dropped altogether: no
-    // draw callback, no clock. While it fades the blobs are drawn at reduced alpha,
-    // so pausing during a scroll no longer makes the background blink out.
-    if (!wanted || fidelity <= 0.01f) {
+    // FIX: Always show base brush. Blobs only hidden when animation is NONE or app backgrounded.
+    // During scrolling, blobs stay visible at reduced intensity but animation pauses to save battery.
+    if (!wanted) {
         Box(modifier = modifier.fillMaxSize().background(baseBrush))
         return
     }
 
-    val phase = rememberAmbientPhase(running = !scrolling)
+    // Phase pauses during scroll to save battery, but blobs remain visible (static)
+    val phase = rememberAmbientPhase(running = !scrolling && foreground)
 
     val particles = remember(spec.particleCount) { buildParticles(spec.particleCount) }
-    val intensity = spec.ambientIntensity * fidelity
+    // FIX: Keep blobs visible during scroll at 60% intensity minimum — never disappear
+    val intensity = spec.ambientIntensity * (0.6f + 0.4f * fidelity.coerceIn(0f, 1f))
     val primary = scheme.primary
     val secondary = scheme.secondary
     val tertiary = scheme.tertiary

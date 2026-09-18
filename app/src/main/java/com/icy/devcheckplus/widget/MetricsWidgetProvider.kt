@@ -14,11 +14,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Battery / RAM / CPU widget.
- *
- * Rendering is synchronous and allocation-light on purpose: the refresh alarm
- * fires every 60 s, so everything that happens here is a handful of local reads
- * plus one `updateAppWidget` call. No coroutines, no shell, no privilege.
+ * Premium redesigned widget family — Quick Stats (default) + additional types.
+ * All widgets share the same refresh scheduler and telemetry source.
  */
 class MetricsWidgetProvider : AppWidgetProvider() {
 
@@ -27,7 +24,6 @@ class MetricsWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        // A widget exists, so keep the light refresh alarm running.
         WidgetRefreshScheduler.schedule(context)
         val snapshot = WidgetMetrics.read(context)
         appWidgetIds.forEach { id ->
@@ -56,57 +52,81 @@ class MetricsWidgetProvider : AppWidgetProvider() {
 
     companion object {
 
-        /**
-         * Re-renders every placed instance. Called by the refresh alarm and from
-         * the app itself, so opening Icy Cheak also resynchronises the widget.
-         */
         fun refreshAll(context: Context) {
             try {
                 val manager = AppWidgetManager.getInstance(context) ?: return
-                val ids: IntArray? = manager.getAppWidgetIds(
-                    ComponentName(context, MetricsWidgetProvider::class.java)
+                val allProviders = listOf(
+                    MetricsWidgetProvider::class.java,
+                    CompactWidgetProvider::class.java,
+                    BatteryWidgetProvider::class.java,
+                    DeviceOverviewWidgetProvider::class.java,
+                    PerformanceWidgetProvider::class.java,
+                    MinimalWidgetProvider::class.java
                 )
-                // NB: IntArray has no isNullOrEmpty() in the stdlib - only Array<out T> does.
-                if (ids == null || ids.isEmpty()) {
-                    // Nothing placed: stop ticking until a widget is added again.
-                    WidgetRefreshScheduler.cancel(context)
-                    return
+                var anyPlaced = false
+                allProviders.forEach { providerClass ->
+                    val ids = manager.getAppWidgetIds(ComponentName(context, providerClass))
+                    if (ids.isNotEmpty()) {
+                        anyPlaced = true
+                        val snapshot = WidgetMetrics.read(context)
+                        ids.forEach { id ->
+                            val views = when (providerClass) {
+                                CompactWidgetProvider::class.java -> CompactWidgetProvider.buildViews(context, snapshot)
+                                BatteryWidgetProvider::class.java -> BatteryWidgetProvider.buildViews(context, snapshot)
+                                DeviceOverviewWidgetProvider::class.java -> DeviceOverviewWidgetProvider.buildViews(context, snapshot)
+                                PerformanceWidgetProvider::class.java -> PerformanceWidgetProvider.buildViews(context, snapshot)
+                                MinimalWidgetProvider::class.java -> MinimalWidgetProvider.buildViews(context, snapshot)
+                                else -> buildViews(context, snapshot)
+                            }
+                            manager.updateAppWidget(id, views)
+                        }
+                    }
                 }
-                val snapshot = WidgetMetrics.read(context)
-                ids.forEach { id -> manager.updateAppWidget(id, buildViews(context, snapshot)) }
-            } catch (ignored: Throwable) {
-                // A widget that fails to repaint keeps showing its last value.
+                if (!anyPlaced) {
+                    WidgetRefreshScheduler.cancel(context)
+                }
+            } catch (_: Throwable) {
             }
         }
 
         private fun placedWidgetCount(context: Context): Int = try {
-            AppWidgetManager.getInstance(context)
-                ?.getAppWidgetIds(ComponentName(context, MetricsWidgetProvider::class.java))
-                ?.size ?: 0
-        } catch (ignored: Throwable) {
+            val manager = AppWidgetManager.getInstance(context)
+            val providers = listOf(
+                MetricsWidgetProvider::class.java,
+                CompactWidgetProvider::class.java,
+                BatteryWidgetProvider::class.java,
+                DeviceOverviewWidgetProvider::class.java,
+                PerformanceWidgetProvider::class.java,
+                MinimalWidgetProvider::class.java
+            )
+            providers.sumOf { cls ->
+                manager?.getAppWidgetIds(ComponentName(context, cls))?.size ?: 0
+            }
+        } catch (_: Throwable) {
             0
         }
 
-        private fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
+        fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_metrics)
 
             views.setTextViewText(
                 R.id.widget_updated,
-                "Updated ${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())}"
+                SimpleDateFormat("HH:mm", Locale.US).format(Date())
             )
 
             // Battery
             if (snapshot.batteryPercent >= 0) {
                 views.setTextViewText(R.id.widget_battery_value, "${snapshot.batteryPercent}%")
-                views.setTextViewText(
-                    R.id.widget_battery_sub,
-                    if (snapshot.batteryCharging) "charging" else "on battery"
-                )
+                val sub = buildString {
+                    if (snapshot.batteryCharging) append("charging")
+                    else append("on battery")
+                    snapshot.batteryTempC?.let { append(" • ${it.toInt()}°C") }
+                }
+                views.setTextViewText(R.id.widget_battery_sub, sub)
                 views.setTextColor(R.id.widget_battery_value, batteryColor(context, snapshot.batteryPercent))
             } else {
                 views.setTextViewText(R.id.widget_battery_value, context.getString(R.string.widget_placeholder))
                 views.setTextViewText(R.id.widget_battery_sub, "no data")
-                views.setTextColor(R.id.widget_battery_value, context.getColor(R.color.widget_text_secondary))
             }
 
             // RAM
@@ -114,32 +134,28 @@ class MetricsWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_ram_value, "${snapshot.ramPercent}%")
                 views.setTextViewText(
                     R.id.widget_ram_sub,
-                    String.format(
-                        Locale.US,
-                        "%.1f / %.1f GB",
-                        snapshot.ramUsedMb / 1024f,
-                        snapshot.ramTotalMb / 1024f
-                    )
+                    String.format(Locale.US, "%.1f/%.1f GB", snapshot.ramUsedMb / 1024f, snapshot.ramTotalMb / 1024f)
                 )
-                views.setTextColor(R.id.widget_ram_value, context.getColor(R.color.widget_accent))
             } else {
                 views.setTextViewText(R.id.widget_ram_value, context.getString(R.string.widget_placeholder))
                 views.setTextViewText(R.id.widget_ram_sub, "no data")
-                views.setTextColor(R.id.widget_ram_value, context.getColor(R.color.widget_text_secondary))
             }
 
             // CPU
             if (snapshot.cpuReadable) {
                 views.setTextViewText(R.id.widget_cpu_value, formatFrequency(snapshot.cpuFreqMhz))
-                views.setTextViewText(R.id.widget_cpu_sub, "${snapshot.cpuCoreCount} cores avg")
-                views.setTextColor(R.id.widget_cpu_value, context.getColor(R.color.widget_accent))
+                views.setTextViewText(R.id.widget_cpu_sub, "${snapshot.cpuCoreCount} cores")
             } else {
-                // scaling_cur_freq is not world-readable on this device; say so
-                // rather than showing a stale or fabricated number.
                 views.setTextViewText(R.id.widget_cpu_value, context.getString(R.string.widget_placeholder))
                 views.setTextViewText(R.id.widget_cpu_sub, "not readable")
                 views.setTextColor(R.id.widget_cpu_value, context.getColor(R.color.widget_warn))
             }
+
+            // Footer
+            try {
+                views.setTextViewText(R.id.widget_device_model, snapshot.deviceModel)
+                views.setTextViewText(R.id.widget_network, snapshot.networkType)
+            } catch (_: Throwable) {}
 
             val launch = Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -162,11 +178,128 @@ class MetricsWidgetProvider : AppWidgetProvider() {
             else -> context.getColor(R.color.widget_accent)
         }
 
-        private fun formatFrequency(mhz: Float): String =
-            if (mhz >= 1000f) {
-                String.format(Locale.US, "%.2f GHz", mhz / 1000f)
-            } else {
-                String.format(Locale.US, "%.0f MHz", mhz)
-            }
+        fun formatFrequency(mhz: Float): String =
+            if (mhz >= 1000f) String.format(Locale.US, "%.2f GHz", mhz / 1000f)
+            else String.format(Locale.US, "%.0f MHz", mhz)
+    }
+}
+
+// Additional widget providers for family
+
+class CompactWidgetProvider : AppWidgetProvider() {
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        WidgetRefreshScheduler.schedule(context)
+        val snapshot = WidgetMetrics.read(context)
+        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
+    }
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
+    }
+    companion object {
+        fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.widget_compact)
+            views.setTextViewText(R.id.compact_battery, if (snapshot.batteryPercent >= 0) "${snapshot.batteryPercent}%" else "--")
+            views.setTextViewText(R.id.compact_ram, if (snapshot.ramPercent >= 0) "${snapshot.ramPercent}%" else "--")
+            views.setTextViewText(R.id.compact_cpu, if (snapshot.cpuReadable) MetricsWidgetProvider.formatFrequency(snapshot.cpuFreqMhz) else "--")
+            val launch = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            views.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(context, 1, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            return views
+        }
+    }
+}
+
+class BatteryWidgetProvider : AppWidgetProvider() {
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        WidgetRefreshScheduler.schedule(context)
+        val snapshot = WidgetMetrics.read(context)
+        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
+    }
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
+    }
+    companion object {
+        fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.widget_battery)
+            views.setTextViewText(R.id.battery_percent, if (snapshot.batteryPercent >= 0) "${snapshot.batteryPercent}%" else "--")
+            views.setTextViewText(R.id.battery_status, if (snapshot.batteryCharging) "Charging" else "On battery")
+            views.setTextViewText(R.id.battery_temp, snapshot.batteryTempC?.let { "${it.toInt()}°C" } ?: "--")
+            views.setTextViewText(R.id.battery_voltage, snapshot.batteryVoltageMv?.let { "${it} mV" } ?: "--")
+            views.setTextViewText(R.id.battery_health, snapshot.batteryHealth ?: "Unknown")
+            val launch = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            views.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(context, 2, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            return views
+        }
+    }
+}
+
+class DeviceOverviewWidgetProvider : AppWidgetProvider() {
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        WidgetRefreshScheduler.schedule(context)
+        val snapshot = WidgetMetrics.read(context)
+        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
+    }
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
+    }
+    companion object {
+        fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.widget_device_overview)
+            views.setTextViewText(R.id.device_model, snapshot.deviceModel)
+            views.setTextViewText(R.id.device_android, snapshot.androidVersion)
+            views.setTextViewText(R.id.device_ram, "${snapshot.ramPercent}% • ${snapshot.ramTotalMb / 1024} GB")
+            views.setTextViewText(R.id.device_storage, "${snapshot.storagePercent}% • ${String.format(Locale.US, "%.1f/%.1f GB", snapshot.storageUsedGb, snapshot.storageTotalGb)}")
+            val launch = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            views.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(context, 3, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            return views
+        }
+    }
+}
+
+class PerformanceWidgetProvider : AppWidgetProvider() {
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        WidgetRefreshScheduler.schedule(context)
+        val snapshot = WidgetMetrics.read(context)
+        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
+    }
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
+    }
+    companion object {
+        fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.widget_performance)
+            views.setTextViewText(R.id.perf_cpu, if (snapshot.cpuReadable) MetricsWidgetProvider.formatFrequency(snapshot.cpuFreqMhz) else "N/A")
+            views.setTextViewText(R.id.perf_ram, "${snapshot.ramPercent}%")
+            views.setTextViewText(R.id.perf_temp, snapshot.batteryTempC?.let { "${it.toInt()}°C" } ?: "--")
+            views.setTextViewText(R.id.perf_cores, "${snapshot.cpuCoreCount} cores")
+            val launch = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            views.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(context, 4, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            return views
+        }
+    }
+}
+
+class MinimalWidgetProvider : AppWidgetProvider() {
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        WidgetRefreshScheduler.schedule(context)
+        val snapshot = WidgetMetrics.read(context)
+        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
+    }
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
+    }
+    companion object {
+        fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.widget_minimal)
+            views.setTextViewText(R.id.minimal_value, if (snapshot.batteryPercent >= 0) "${snapshot.batteryPercent}%" else "--")
+            views.setTextViewText(R.id.minimal_label, "Battery • ${snapshot.deviceModel}")
+            val launch = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            views.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(context, 5, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            return views
+        }
     }
 }

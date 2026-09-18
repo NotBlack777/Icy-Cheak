@@ -4,34 +4,43 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import java.io.File
 import java.util.Locale
 
-/** One widget render's worth of telemetry. */
+/** One widget render's worth of telemetry — expanded for full widget family. */
 data class WidgetSnapshot(
-    /** -1 when the battery broadcast could not be read. */
     val batteryPercent: Int,
     val batteryCharging: Boolean,
+    val batteryTempC: Float?,
+    val batteryVoltageMv: Int?,
+    val batteryHealth: String?,
     val ramUsedMb: Long,
     val ramTotalMb: Long,
-    /** 0f when no core frequency was readable. */
     val cpuFreqMhz: Float,
     val cpuReadable: Boolean,
-    val cpuCoreCount: Int
+    val cpuCoreCount: Int,
+    val deviceModel: String,
+    val androidVersion: String,
+    val storageUsedGb: Float,
+    val storageTotalGb: Float,
+    val networkType: String,
+    val networkExtra: String?
 ) {
     val ramPercent: Int
         get() = if (ramTotalMb > 0) ((ramUsedMb * 100) / ramTotalMb).toInt() else -1
+    val storagePercent: Int
+        get() = if (storageTotalGb > 0) ((storageUsedGb * 100) / storageTotalGb).toInt() else -1
 }
 
 /**
- * Cheap, unprivileged telemetry for the home screen widget.
- *
- * Everything here is a local read — the sticky battery broadcast, an
- * ActivityManager memory query and direct sysfs file reads — so a refresh costs
- * well under a millisecond of CPU and never spawns a shell or touches
- * root/Shizuku. That is what makes a 60 s cadence affordable. Cores whose
- * `scaling_cur_freq` is not world-readable are skipped instead of escalated.
+ * Cheap, unprivileged telemetry for home screen widgets.
+ * All reads are local — no shell, no root/Shizuku — so 60s cadence is affordable.
  */
 object WidgetMetrics {
 
@@ -39,58 +48,81 @@ object WidgetMetrics {
     private const val MB = 1024L * 1024L
 
     fun read(context: Context): WidgetSnapshot {
-        val (batteryPercent, charging) = readBattery(context)
+        val (batteryPercent, charging, tempC, voltageMv, health) = readBattery(context)
         val (usedMb, totalMb) = readRam(context)
-        val cores = Runtime.getRuntime().availableProcessors()
+        val cores = Runtime.getRuntime().availableProcessors().coerceIn(1, 32)
         val freqMhz = readAverageCoreFrequency(cores)
+        val (storageUsed, storageTotal) = readStorage()
+        val (netType, netExtra) = readNetwork(context)
 
         return WidgetSnapshot(
             batteryPercent = batteryPercent,
             batteryCharging = charging,
+            batteryTempC = tempC,
+            batteryVoltageMv = voltageMv,
+            batteryHealth = health,
             ramUsedMb = usedMb,
             ramTotalMb = totalMb,
             cpuFreqMhz = freqMhz ?: 0f,
             cpuReadable = freqMhz != null,
-            cpuCoreCount = cores
+            cpuCoreCount = cores,
+            deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+            androidVersion = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            storageUsedGb = storageUsed,
+            storageTotalGb = storageTotal,
+            networkType = netType,
+            networkExtra = netExtra
         )
     }
 
-    private fun readBattery(context: Context): Pair<Int, Boolean> = try {
-        // A null receiver just fetches the sticky ACTION_BATTERY_CHANGED intent.
+    private data class BatteryInfo(
+        val percent: Int,
+        val charging: Boolean,
+        val tempC: Float?,
+        val voltageMv: Int?,
+        val health: String?
+    )
+
+    private fun readBattery(context: Context): BatteryInfo = try {
         val sticky = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         if (sticky == null) {
-            -1 to false
+            BatteryInfo(-1, false, null, null, null)
         } else {
             val level = sticky.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
             val scale = sticky.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-            val status = sticky.getIntExtra(
-                BatteryManager.EXTRA_STATUS,
-                BatteryManager.BATTERY_STATUS_UNKNOWN
-            )
+            val status = sticky.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
             val percent = if (level >= 0 && scale > 0) (level * 100) / scale else -1
-            val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                status == BatteryManager.BATTERY_STATUS_FULL
-            percent to charging
+            val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+            val tempRaw = sticky.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1)
+            val tempC = if (tempRaw > 0) tempRaw / 10f else null
+            val voltageMv = sticky.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1).takeIf { it > 0 }
+            val healthInt = sticky.getIntExtra(BatteryManager.EXTRA_HEALTH, -1)
+            val health = when (healthInt) {
+                BatteryManager.BATTERY_HEALTH_GOOD -> "Good"
+                BatteryManager.BATTERY_HEALTH_OVERHEAT -> "Overheat"
+                BatteryManager.BATTERY_HEALTH_DEAD -> "Dead"
+                BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "Over Voltage"
+                BatteryManager.BATTERY_HEALTH_COLD -> "Cold"
+                else -> null
+            }
+            BatteryInfo(percent, charging, tempC, voltageMv, health)
         }
-    } catch (t: Throwable) {
-        -1 to false
+    } catch (_: Throwable) {
+        BatteryInfo(-1, false, null, null, null)
     }
 
     private fun readRam(context: Context): Pair<Long, Long> = try {
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        if (activityManager == null) {
-            0L to 0L
-        } else {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        if (am == null) 0L to 0L else {
             val info = ActivityManager.MemoryInfo()
-            activityManager.getMemoryInfo(info)
+            am.getMemoryInfo(info)
             val usedMb = (info.totalMem - info.availMem) / MB
             usedMb to (info.totalMem / MB)
         }
-    } catch (t: Throwable) {
+    } catch (_: Throwable) {
         0L to 0L
     }
 
-    /** Average frequency (MHz) across the readable cores, or null if none are. */
     private fun readAverageCoreFrequency(coreCount: Int): Float? = try {
         var sumKhz = 0L
         var readable = 0
@@ -102,13 +134,45 @@ object WidgetMetrics {
             }
         }
         if (readable == 0) null else (sumKhz / readable) / 1000f
-    } catch (t: Throwable) {
+    } catch (_: Throwable) {
         null
+    }
+
+    private fun readStorage(): Pair<Float, Float> = try {
+        val path = Environment.getDataDirectory()
+        val stat = StatFs(path.path)
+        val totalBytes = stat.totalBytes
+        val freeBytes = stat.availableBytes
+        val usedBytes = totalBytes - freeBytes
+        val totalGb = totalBytes / (1024f * 1024f * 1024f)
+        val usedGb = usedBytes / (1024f * 1024f * 1024f)
+        usedGb to totalGb
+    } catch (_: Throwable) {
+        0f to 0f
+    }
+
+    private fun readNetwork(context: Context): Pair<String, String?> {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            if (cm == null) return "Unknown" to null
+            val network = cm.activeNetwork
+            val caps = cm.getNetworkCapabilities(network)
+            if (caps == null) return "Offline" to null
+            when {
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi" to "Connected"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular" to "Connected"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet" to "Connected"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN" to "Active"
+                else -> "Connected" to null
+            }
+        } catch (_: Throwable) {
+            "Unknown" to null
+        }
     }
 
     private fun readLongFromFile(path: String): Long? = try {
         File(path).readText().trim().toLongOrNull()
-    } catch (t: Throwable) {
+    } catch (_: Throwable) {
         null
     }
 }

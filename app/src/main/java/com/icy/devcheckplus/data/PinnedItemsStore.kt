@@ -20,16 +20,19 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 enum class PinnableCategory(val label: String) {
     HARDWARE("Hardware"),
+    DISPLAY("Display"),
     SOFTWARE("Software"),
     BATTERY("Battery"),
+    THERMAL("Thermal"),
     STORAGE("Storage"),
-    NETWORK("Network")
+    NETWORK("Network"),
+    CAMERA("Camera"),
+    CODECS("Codecs"),
+    SECURITY("Security")
 }
 
 /**
  * Stable identity of a single data row: category + section title + item title.
- * Encoded with a unit separator so titles containing ordinary punctuation cannot
- * collide.
  */
 data class PinnedItemKey(
     val category: PinnableCategory,
@@ -58,35 +61,21 @@ data class PinnedEntry(
 
 private val Context.pinnedDataStore: DataStore<Preferences> by preferencesDataStore(name = "devcheck_pinned")
 
-/**
- * Persistent pinned/favourite rows.
- *
- * Backed by Jetpack DataStore preferences — local storage only, so pinning works
- * with or without root/Shizuku and survives process death and app restarts.
- */
 object PinnedItemsStore {
 
     private val KEY_PINNED = stringSetPreferencesKey("pinned_item_keys")
-
-    /** Hard cap so the dashboard (and the preference file) stay small. */
     const val MAX_PINS = 60
 
-    /**
-     * Watchdog for loading one category while resolving pinned values — the same
-     * user setting the export uses (Settings › Advanced › Watchdog timeout).
-     */
     private val categoryTimeoutMs: Long
         get() = UserPreferencesStore.watchdogTimeout.value.millis
 
     fun pinnedKeys(context: Context): Flow<Set<String>> =
         context.pinnedDataStore.data.map { prefs -> prefs[KEY_PINNED] ?: emptySet() }
 
-    /** Pins or unpins [key]; returns whether it is pinned afterwards. */
     suspend fun toggle(context: Context, key: PinnedItemKey): Boolean {
         var pinnedAfter = false
         context.pinnedDataStore.edit { prefs ->
             val encoded = key.encode()
-            // LinkedHashSet keeps insertion order, which a plain Set does not.
             val current = LinkedHashSet(prefs[KEY_PINNED] ?: emptySet())
             if (!current.remove(encoded)) {
                 current.add(encoded)
@@ -111,13 +100,10 @@ object PinnedItemsStore {
         context.pinnedDataStore.edit { prefs -> prefs.remove(KEY_PINNED) }
     }
 
-    /**
-     * Resolves the current value of every pinned row.
-     *
-     * Only the categories that actually contain pins are fetched, in parallel and
-     * each behind its own watchdog, so a slow privileged read delays at most its
-     * own category and can never hang the dashboard.
-     */
+    suspend fun clearAll(context: Context) {
+        context.pinnedDataStore.edit { prefs -> prefs.remove(KEY_PINNED) }
+    }
+
     suspend fun loadEntries(context: Context, keys: List<PinnedItemKey>): List<PinnedEntry> {
         if (keys.isEmpty()) return emptyList()
         val appContext = context.applicationContext
@@ -142,13 +128,18 @@ object PinnedItemsStore {
             withTimeoutOrNull(categoryTimeoutMs) {
                 when (category) {
                     PinnableCategory.HARDWARE -> HardwareDataProvider.getHardwareSections(context)
+                    PinnableCategory.DISPLAY -> DisplayDataProvider.getDisplaySections(context)
                     PinnableCategory.SOFTWARE -> SoftwareDataProvider.getSoftwareSections(context)
                     PinnableCategory.BATTERY -> BatteryDataProvider.getBatterySections(context)
+                    PinnableCategory.THERMAL -> ThermalDataProvider.getThermalSections(context)
                     PinnableCategory.STORAGE -> StorageDataProvider.getStorageSections(context).first
                     PinnableCategory.NETWORK -> NetworkDataProvider.getNetworkSections(
                         context,
                         AppSettingsStore.publicIpLookupEnabled(context)
                     )
+                    PinnableCategory.CAMERA -> CameraDataProvider.getCameraSections(context)
+                    PinnableCategory.CODECS -> CodecDataProvider.getCodecSections()
+                    PinnableCategory.SECURITY -> SecurityDataProvider.getSecuritySections(context)
                 }
             } ?: emptyList()
         } catch (interrupted: kotlinx.coroutines.CancellationException) {

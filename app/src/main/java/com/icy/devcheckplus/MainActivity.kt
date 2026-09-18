@@ -3,6 +3,9 @@ package com.icy.devcheckplus
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -13,6 +16,15 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -101,6 +113,11 @@ import com.icy.devcheckplus.ui.screens.SensorsScreen
 import com.icy.devcheckplus.ui.screens.SettingsScreen
 import com.icy.devcheckplus.ui.screens.SoftwareScreen
 import com.icy.devcheckplus.ui.screens.StorageScreen
+import com.icy.devcheckplus.ui.screens.DisplayScreen
+import com.icy.devcheckplus.ui.screens.ThermalScreen
+import com.icy.devcheckplus.ui.screens.CameraScreen
+import com.icy.devcheckplus.ui.screens.CodecScreen
+import com.icy.devcheckplus.ui.screens.SecurityScreen
 import com.icy.devcheckplus.ui.screens.SystemLogsScreen
 import com.icy.devcheckplus.ui.theme.DevCheckPlusTheme
 import kotlinx.coroutines.delay
@@ -108,7 +125,15 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // FIX: Proper edge-to-edge — background extends behind status bar & cutout
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Allow content behind cutout (notch) — background owns entire display
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         // Frame-timing instrumentation (Settings › Advanced › Frame metrics
         // logging). Attaching here only hands the monitor a window: nothing is
         // listened to until the user switches it on.
@@ -189,12 +214,14 @@ fun MainAppContainer() {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // The single ambient layer for the whole app — onboarding included. It sits
-        // above the window background and below everything else, so the translucent
-        // top bar, the frosted drawer and every glass card read against the same
-        // drifting gradient (or the same flat wash, in OLED mode / while scrolling).
-        AmbientBackground(modifier = Modifier.matchParentSize())
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // FIX: Ambient background extends behind status bar, navigation bar, and cutout
+        // It owns the entire display — content respects safe areas, background does not
+        AmbientBackground(modifier = Modifier.fillMaxSize())
 
         if (showOnboarding) {
             OnboardingScreen(onFinished = {
@@ -334,13 +361,16 @@ fun MainDashboardScreen(
         }
     ) {
         Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
             // The Settings tab has its own Export card, so the FAB hides there.
             floatingActionButton = {
                 if (currentCategory != NavCategory.SETTINGS) {
                     FloatingActionButton(
                         onClick = { showExportDialog = true },
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Share,
@@ -351,7 +381,13 @@ fun MainDashboardScreen(
             },
             floatingActionButtonPosition = FabPosition.End,
             topBar = {
-                GlassTopBar(modifier = Modifier.fillMaxWidth()) {
+                // FIX: Top bar respects status bar + cutout insets, background extends behind
+                GlassTopBar(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                ) {
                     SearchHeader(
                         search = search,
                         currentCategory = currentCategory,
@@ -365,12 +401,13 @@ fun MainDashboardScreen(
                 }
             }
         ) { innerPadding ->
-            // Transparent: the app-wide ambient layer behind the Scaffold shows
-            // through, including behind the translucent top bar.
+            // FIX: Content respects navigation bars and display cutout, but background already fills entire display
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
             ) {
                 AnimatedContent(
                     targetState = currentCategory,
@@ -401,10 +438,15 @@ fun MainDashboardScreen(
                         when (category) {
                             NavCategory.DASHBOARD -> DashboardScreen(searchQuery = query, locateToken = locate)
                             NavCategory.HARDWARE -> HardwareScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.DISPLAY -> DisplayScreen(searchQuery = query, locateToken = locate)
                             NavCategory.SOFTWARE -> SoftwareScreen(searchQuery = query, locateToken = locate)
                             NavCategory.BATTERY -> BatteryScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.THERMAL -> ThermalScreen(searchQuery = query, locateToken = locate)
                             NavCategory.STORAGE -> StorageScreen(searchQuery = query, locateToken = locate)
                             NavCategory.NETWORK -> NetworkScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.CAMERA -> CameraScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.CODECS -> CodecScreen(searchQuery = query, locateToken = locate)
+                            NavCategory.SECURITY -> SecurityScreen(searchQuery = query, locateToken = locate)
                             NavCategory.PROCESSES -> ProcessesScreen(searchQuery = query, locateToken = locate)
                             NavCategory.APPS -> InstalledAppsScreen(searchQuery = query, locateToken = locate)
                             NavCategory.LOGS -> SystemLogsScreen(searchQuery = query, locateToken = locate)
@@ -459,6 +501,7 @@ private fun SearchHeader(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
+            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

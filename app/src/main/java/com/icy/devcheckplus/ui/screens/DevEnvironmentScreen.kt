@@ -93,15 +93,9 @@ fun DevEnvironmentScreen(
     val status by PrivilegeManager.status.collectAsStateWithLifecycle(
         initialValue = PrivilegeManager.status.value
     )
-    // Auto-request Shizuku permission on first open right after onboarding —
-    // harmless when it is already granted, and the likely next step otherwise.
-    val requestedShizuku = remember { mutableStateOf(false) }
-    LaunchedEffect(status.shizukuGranted) {
-        if (!status.shizukuGranted && foreground && !requestedShizuku.value) {
-            requestedShizuku.value = true
-            PrivilegeManager.requestShizukuPermission()
-        }
-    }
+    // FIXED: Do NOT auto-request Shizuku on open — too aggressive.
+    // User must explicitly tap "Request Shizuku" button in no-privilege state.
+    // This respects user intent and avoids unexpected permission dialogs.
 
     val elevated = status.activeMode == PrivilegeMode.ROOT || status.activeMode == PrivilegeMode.SHIZUKU
 
@@ -333,10 +327,28 @@ private fun noPrivilegeState(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
-        if (onOpenSettings != null) {
-            Spacer(modifier = Modifier.height(10.dp))
-            TextButton(onClick = onOpenSettings) { Text("Open Settings") }
+        Spacer(modifier = Modifier.height(16.dp))
+        // FIXED: Explicit user action to request Shizuku — no auto-popup
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.material3.OutlinedButton(
+                onClick = { PrivilegeManager.requestShizukuPermission() }
+            ) {
+                Text("Request Shizuku")
+            }
+            if (onOpenSettings != null) {
+                TextButton(onClick = onOpenSettings) { Text("Open Settings") }
+            }
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Shizuku permission is requested only when you tap the button above.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
     }
 }
 
