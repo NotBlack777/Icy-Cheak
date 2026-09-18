@@ -34,7 +34,20 @@ jobs:
         run: chmod +x gradlew
 
       - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+
+      - name: Publish compiler errors
+        if: failure()
+        run: |
+          if grep -qE "^e: " build.log; then
+            grep -E "^e: " build.log | head -80 | while IFS= read -r line; do
+              echo "::error title=Kotlin::$line"
+            done
+          else
+            tail -n 30 build.log | while IFS= read -r line; do
+              echo "::error title=Gradle::$line"
+            done
+          fi
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
