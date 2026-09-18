@@ -139,6 +139,8 @@ fun SettingsScreen(
 ) {
     var showExportDialog by remember { mutableStateOf(false) }
     var showRefreshRateSheet by remember { mutableStateOf(false) }
+    var showWatchdogSheet by remember { mutableStateOf(false) }
+    var showExportFormatSheet by remember { mutableStateOf(false) }
     var showReportSectionsSheet by remember { mutableStateOf(false) }
     var showAnimationWarning by remember { mutableStateOf(false) }
     var showOrganizer by remember { mutableStateOf(false) }

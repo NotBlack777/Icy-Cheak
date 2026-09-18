@@ -170,7 +170,7 @@ data class CustomGradient(
         sanitizeName(name),
         angleDegrees.coerceIn(0, 359).toString(),
         if (radial) "1" else "0",
-        colors.take(MAX_STOPS).joinToString(COLOR_SEPARATOR) { "%08X".format(it and 0xFFFFFFFFL) }
+        colors.take(MAX_STOPS).joinToString(COLOR_SEPARATOR.toString()) { "%08X".format(it and 0xFFFFFFFFL) }
     ).joinToString(FIELD_SEPARATOR.toString())
 
     companion object {

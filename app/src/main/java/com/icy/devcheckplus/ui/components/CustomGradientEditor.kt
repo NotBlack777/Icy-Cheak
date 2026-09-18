@@ -1,5 +1,7 @@
 package com.icy.devcheckplus.ui.components
 
+import android.graphics.Color as AndroidColor
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,7 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
@@ -48,9 +50,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.hsv
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.toHsv
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -109,7 +108,7 @@ fun CustomGradientSheet(
 
     val index = selectedIndex.coerceIn(0, (colors.size - 1).coerceAtLeast(0))
     val currentArgb = colors.getOrElse(index) { CustomGradient.STARTER.colors[0] }
-    val hsvValues = remember(currentArgb) { Color(currentArgb).toHsv() }
+    val hsvValues = remember(currentArgb) { argbToHsv(currentArgb) }
 
     // The draft is what the previews paint; rebuilt only when an input changes
     // (the name is a key too — the preview card shows it live while typing).
@@ -142,8 +141,7 @@ fun CustomGradientSheet(
             onAdd = {
                 // New stop starts as a hue-shifted copy of the last one, so it is
                 // visibly different instead of an identical duplicate.
-                val last = Color(colors.last())
-                val lastHsv = last.toHsv()
+                val lastHsv = argbToHsv(colors.last())
                 colors.add(hsvToArgb((lastHsv[0] + 60f) % 360f, lastHsv[1], lastHsv[2]))
                 selectedIndex = colors.size - 1
             },
@@ -455,7 +453,7 @@ private fun HsvWheel(
         val sweep = 360f / segments
         for (segment in 0 until segments) {
             drawArc(
-                color = hsv(segment * sweep + sweep / 2f, 1f, 1f),
+                color = hsvColor(segment * sweep + sweep / 2f, 1f, 1f),
                 startAngle = segment * sweep - 0.6f,
                 sweepAngle = sweep + 1.2f,
                 useCenter = false,
@@ -470,7 +468,7 @@ private fun HsvWheel(
         val squareSize = Size(half * 2f, half * 2f)
         val topLeft = Offset(cx - half, cy - half)
         drawRect(
-            brush = Brush.horizontalGradient(listOf(Color.White, hsv(hue, 1f, 1f))),
+            brush = Brush.horizontalGradient(listOf(Color.White, hsvColor(hue, 1f, 1f))),
             topLeft = topLeft,
             size = squareSize
         )
@@ -672,8 +670,27 @@ private fun AnglePresetRow(angle: Int, radial: Boolean, onAngleChange: (Int) -> 
     }
 }
 
-/** ARGB `Long` → HSV → back, in one place so the editor and the store agree. */
+/*
+ * HSV conversion goes through the framework rather than Compose: ui-graphics ships
+ * no `hsv()` factory and no `Color.toHsv()`, while `android.graphics.Color` has
+ * carried both since API 1. Kept as two private helpers in one place so the wheel,
+ * the hex field and the stored ARGB values can never disagree about the encoding.
+ */
+
+/** HSV → ARGB `Long`, the form [CustomGradient.colors] stores. */
 private fun hsvToArgb(hue: Float, saturation: Float, value: Float): Long =
-    hsv(hue.coerceIn(0f, 360f), saturation.coerceIn(0f, 1f), value.coerceIn(0f, 1f))
-        .toArgb()
-        .toLong() and 0xFFFFFFFFL
+    AndroidColor.HSVToColor(
+        floatArrayOf(
+            hue.coerceIn(0f, 360f),
+            saturation.coerceIn(0f, 1f),
+            value.coerceIn(0f, 1f)
+        )
+    ).toLong() and 0xFFFFFFFFL
+
+/** ARGB `Long` → `[hue (0-360), saturation (0-1), value (0-1)]`. */
+private fun argbToHsv(argb: Long): FloatArray =
+    FloatArray(3).also { AndroidColor.colorToHSV(argb.toInt(), it) }
+
+/** HSV → a Compose [Color], for painting the wheel itself. */
+private fun hsvColor(hue: Float, saturation: Float, value: Float): Color =
+    Color(hsvToArgb(hue, saturation, value))
