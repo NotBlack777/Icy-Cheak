@@ -352,6 +352,96 @@ fun GlassSectionHeader(
 }
 
 /**
+ * A whole *group* of rows in one glass box: header, hairline, content.
+ *
+ * Grouped-settings structure (the layout a system settings screen uses: a labelled
+ * box per category) rendered in this app's own liquid-glass skin. The header sits
+ * **inside** the bordered/gradient container rather than floating above it as bare
+ * text, so a category reads as one object — the same visual language as the rows
+ * inside it, which are no longer cards of their own.
+ *
+ * Everything expensive is inherited from [GlassCard], so a group box flattens its
+ * gradient, drops its blur and its shadow while the list is being flung and fades
+ * back once it settles.
+ */
+@Composable
+fun GlassGroupBox(
+    title: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    supporting: String? = null,
+    shape: Shape = RoundedCornerShape(24.dp),
+    contentPadding: PaddingValues = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val spec = LocalGlassSpec.current
+
+    GlassCard(
+        modifier = modifier,
+        shape = shape,
+        contentPadding = contentPadding,
+        frosted = true
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 2.dp, end = 2.dp, top = 10.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (icon != null) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(scheme.primary.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = scheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = scheme.primary,
+                letterSpacing = 0.9.sp,
+                modifier = Modifier.weight(1f)
+            )
+            if (supporting != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        // Hairline that ties the header to the rows below it without adding a
+        // second surface: same tint and thickness the rows already use internally.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.8.dp)
+                .background(scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f))
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        content()
+    }
+}
+
+/**
  * A tappable row inside a [GlassCard]: icon well + title/subtitle + trailing slot.
  * Rounded so the ripple stays inside the card.
  */

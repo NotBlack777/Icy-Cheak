@@ -3,11 +3,11 @@ package com.icy.devcheckplus.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -84,9 +83,8 @@ import com.icy.devcheckplus.ui.components.AccentGrid
 import com.icy.devcheckplus.ui.components.AmbientBackground
 import com.icy.devcheckplus.ui.components.BackgroundAnimationGrid
 import com.icy.devcheckplus.ui.components.ExportReportDialog
-import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassRow
-import com.icy.devcheckplus.ui.components.GlassSectionHeader
+import com.icy.devcheckplus.ui.components.GlassGroupBox
 import com.icy.devcheckplus.ui.components.GradientGrid
 import com.icy.devcheckplus.ui.components.HapticSwitch
 import com.icy.devcheckplus.ui.components.PillAction
@@ -120,7 +118,6 @@ import kotlinx.coroutines.launch
  * interval invalidates that card alone — previously all of these flows were read
  * at the top of the screen, which meant the whole LazyColumn re-ran on any change.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(
     onResetOnboarding: () -> Unit = {},
@@ -155,37 +152,41 @@ fun SettingsScreen(
 
             val visibleSections = sectionOrder.filterNot { it in hiddenSections }
             visibleSections.forEach { section ->
-                // Sticky: the section label pins under the app bar while its card
-                // scrolls, so the grouping stays readable at any scroll offset.
-                stickyHeader(key = "header_${section.name}") {
-                    StickySectionHeader(
+                // One item per category, and the header is *inside* the box: a
+                // category is a single bordered gradient/glass object rather than a
+                // bare label floating above a separate card. The sticky header the
+                // previous layout used is gone with it — a pinned label cannot live
+                // inside the container it labels, and the grouped box keeps the
+                // category readable on its own.
+                item(key = "section_${section.name}") {
+                    GlassGroupBox(
                         title = section.title,
-                        icon = section.displayIcon()
-                    )
-                }
-                item(key = "card_${section.name}") {
-                    when (section) {
-                        SettingsSectionId.APPEARANCE -> ThemeCard()
-                        SettingsSectionId.THEMING -> ThemingCard()
-                        SettingsSectionId.BACKGROUND -> BackgroundAnimationCard(
-                            onRequestAnimation = { requested ->
-                                // OLED forces "None" unless the user explicitly opts
-                                // back in, which is what the warning confirms.
-                                pendingAnimation = requested
-                                showAnimationWarning = true
-                            }
-                        )
-                        SettingsSectionId.PRIVILEGE -> PrivilegeCard()
-                        SettingsSectionId.PRIVACY -> PrivacyCard(
-                            onRefreshRateClick = { showRefreshRateSheet = true }
-                        )
-                        SettingsSectionId.GENERAL -> GeneralCard(onResetOnboarding = onResetOnboarding)
-                        SettingsSectionId.EXPORT -> ExportCard(
-                            onExport = { showExportDialog = true },
-                            onSectionsClick = { showReportSectionsSheet = true }
-                        )
-                        SettingsSectionId.UPDATES -> UpdatesCard()
-                        SettingsSectionId.ABOUT -> AboutCard()
+                        icon = section.displayIcon(),
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    ) {
+                        when (section) {
+                            SettingsSectionId.APPEARANCE -> AppearanceSection()
+                            SettingsSectionId.THEMING -> ThemingSection()
+                            SettingsSectionId.BACKGROUND -> BackgroundSection(
+                                onRequestAnimation = { requested ->
+                                    // OLED forces "None" unless the user explicitly
+                                    // opts back in, which is what the warning confirms.
+                                    pendingAnimation = requested
+                                    showAnimationWarning = true
+                                }
+                            )
+                            SettingsSectionId.PRIVILEGE -> PrivilegeSection()
+                            SettingsSectionId.PRIVACY -> PrivacySection(
+                                onRefreshRateClick = { showRefreshRateSheet = true }
+                            )
+                            SettingsSectionId.GENERAL -> GeneralSection(onResetOnboarding = onResetOnboarding)
+                            SettingsSectionId.EXPORT -> ExportSection(
+                                onExport = { showExportDialog = true },
+                                onSectionsClick = { showReportSectionsSheet = true }
+                            )
+                            SettingsSectionId.UPDATES -> UpdatesSection()
+                            SettingsSectionId.ABOUT -> AboutSection()
+                        }
                     }
                 }
             }
@@ -278,23 +279,6 @@ fun SettingsScreen(
                 }
             )
         }
-    }
-}
-
-/**
- * Section label that pins while its card scrolls. The translucent background is
- * what makes it readable over the card sliding underneath: without it the pinned
- * label would overlap the glass and both would be unreadable.
- */
-@Composable
-private fun StickySectionHeader(title: String, icon: ImageVector) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(scheme.background.copy(alpha = 0.92f))
-    ) {
-        GlassSectionHeader(title = title, icon = icon)
     }
 }
 
@@ -397,7 +381,7 @@ private fun StatusPill(status: PrivilegeStatus) {
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun ThemeCard() {
+private fun ColumnScope.AppearanceSection() {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
@@ -406,87 +390,85 @@ private fun ThemeCard() {
     val dynamicColor by AppSettingsStore.dynamicColor.collectAsStateWithLifecycle(initialValue = AppSettingsStore.dynamicColor.value)
     val hapticFeedback by AppSettingsStore.hapticFeedback.collectAsStateWithLifecycle(initialValue = AppSettingsStore.hapticFeedback.value)
 
-    GlassCard(frosted = true) {
-        Text(
-            text = "Theme mode",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = scheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(
-            text = "Dark and OLED are separate themes — OLED is the lightweight one.",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant
-        )
+    Text(
+        text = "Theme mode",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = scheme.onSurface
+    )
+    Spacer(modifier = Modifier.height(3.dp))
+    Text(
+        text = "Dark and OLED are separate themes — OLED is the lightweight one.",
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant
+    )
 
-        Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(16.dp))
 
-        val themeModes = remember { ThemeMode.values().toList() }
-        TileGrid(items = themeModes, columns = 2, spacing = 10.dp, aspectRatio = 1f) { tileModifier, mode ->
-            SelectableTile(
-                selected = mode == themeMode,
-                onClick = { AppSettingsStore.setThemeMode(context, mode) },
-                modifier = tileModifier,
-                label = mode.label,
-                supporting = mode.tagline,
-                preview = { ThemeModePreview(mode) }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        DetailNote(text = themeMode.detailText)
-
-        if (themeMode == ThemeMode.OLED) {
-            Spacer(modifier = Modifier.height(8.dp))
-            DetailNote(
-                text = "OLED sets surfaces to pure black, disables blur, elevation, gradients and " +
-                    "the background animation, and drops the poll-driven repaint cost — the " +
-                    "smoothest, lowest-power rendering path."
-            )
-        }
-
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 14.dp),
-            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
-            thickness = 0.8.dp
-        )
-
-        GlassRow(
-            title = "Dynamic colour",
-            icon = Icons.Default.Palette,
-            subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                "Pull accents from your wallpaper (Material You). An accent picked below overrides it."
-            } else {
-                "Wallpaper colours need Android 12+ — the built-in cyan palette is used."
-            },
-            trailing = {
-                HapticSwitch(
-                    checked = dynamicColor,
-                    onCheckedChange = { AppSettingsStore.setDynamicColor(context, it) }
-                )
-            }
-        )
-
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 6.dp),
-            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
-            thickness = 0.8.dp
-        )
-
-        GlassRow(
-            title = "Haptic feedback",
-            icon = Icons.Default.Vibration,
-            subtitle = "A light tick on toggles, tile selections and pin stars.",
-            trailing = {
-                HapticSwitch(
-                    checked = hapticFeedback,
-                    onCheckedChange = { AppSettingsStore.setHapticFeedback(context, it) }
-                )
-            }
+    val themeModes = remember { ThemeMode.values().toList() }
+    TileGrid(items = themeModes, columns = 2, spacing = 10.dp, aspectRatio = 1f) { tileModifier, mode ->
+        SelectableTile(
+            selected = mode == themeMode,
+            onClick = { AppSettingsStore.setThemeMode(context, mode) },
+            modifier = tileModifier,
+            label = mode.label,
+            supporting = mode.tagline,
+            preview = { ThemeModePreview(mode) }
         )
     }
+
+    Spacer(modifier = Modifier.height(14.dp))
+
+    DetailNote(text = themeMode.detailText)
+
+    if (themeMode == ThemeMode.OLED) {
+        Spacer(modifier = Modifier.height(8.dp))
+        DetailNote(
+            text = "OLED sets surfaces to pure black, disables blur, elevation, gradients and " +
+                "the background animation, and drops the poll-driven repaint cost — the " +
+                "smoothest, lowest-power rendering path."
+        )
+    }
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 14.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    GlassRow(
+        title = "Dynamic colour",
+        icon = Icons.Default.Palette,
+        subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            "Pull accents from your wallpaper (Material You). An accent picked below overrides it."
+        } else {
+            "Wallpaper colours need Android 12+ — the built-in cyan palette is used."
+        },
+        trailing = {
+            HapticSwitch(
+                checked = dynamicColor,
+                onCheckedChange = { AppSettingsStore.setDynamicColor(context, it) }
+            )
+        }
+    )
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    GlassRow(
+        title = "Haptic feedback",
+        icon = Icons.Default.Vibration,
+        subtitle = "A light tick on toggles, tile selections and pin stars.",
+        trailing = {
+            HapticSwitch(
+                checked = hapticFeedback,
+                onCheckedChange = { AppSettingsStore.setHapticFeedback(context, it) }
+            )
+        }
+    )
 }
 
 private val ThemeMode.detailText: String
@@ -506,82 +488,80 @@ private val ThemeMode.detailText: String
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun ThemingCard() {
+private fun ColumnScope.ThemingSection() {
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
     val accent by UserPreferencesStore.accent.collectAsStateWithLifecycle(initialValue = UserPreferencesStore.accent.value)
     val gradient by UserPreferencesStore.gradient.collectAsStateWithLifecycle(initialValue = UserPreferencesStore.gradient.value)
 
-    GlassCard(frosted = true) {
-        Text(
-            text = "Accent colour",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = scheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(
-            text = "Applied app-wide to buttons, switches, selection rings, highlights, ripple and " +
-                "chart strokes — nothing is hardcoded per screen.",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant
-        )
+    Text(
+        text = "Accent colour",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = scheme.onSurface
+    )
+    Spacer(modifier = Modifier.height(3.dp))
+    Text(
+        text = "Applied app-wide to buttons, switches, selection rings, highlights, ripple and " +
+            "chart strokes — nothing is hardcoded per screen.",
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant
+    )
 
-        Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(16.dp))
 
-        AccentGrid(
-            selected = accent,
-            onSelect = { UserPreferencesStore.setAccent(it) }
-        )
+    AccentGrid(
+        selected = accent,
+        onSelect = { UserPreferencesStore.setAccent(it) }
+    )
 
-        Spacer(modifier = Modifier.height(14.dp))
+    Spacer(modifier = Modifier.height(14.dp))
 
-        DetailNote(
-            text = if (accent == AccentPalette.DEFAULT) {
-                "Currently using the theme's own accent. Pick a swatch to override it everywhere."
-            } else {
-                "${accent.label} is active. \"Default\" restores the theme/dynamic accent."
-            }
-        )
+    DetailNote(
+        text = if (accent == AccentPalette.DEFAULT) {
+            "Currently using the theme's own accent. Pick a swatch to override it everywhere."
+        } else {
+            "${accent.label} is active. \"Default\" restores the theme/dynamic accent."
+        }
+    )
 
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 14.dp),
-            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
-            thickness = 0.8.dp
-        )
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 14.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
 
-        Text(
-            text = "Surface gradient",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = scheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(
-            text = "Sets the gradient direction and colour pair used by cards, tiles and the app bar. " +
-                "\"Solid\" disables gradients entirely.",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant
-        )
+    Text(
+        text = "Surface gradient",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = scheme.onSurface
+    )
+    Spacer(modifier = Modifier.height(3.dp))
+    Text(
+        text = "Sets the gradient direction and colour pair used by cards, tiles and the app bar. " +
+            "\"Solid\" disables gradients entirely.",
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant
+    )
 
-        Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(16.dp))
 
-        GradientGrid(
-            selected = gradient,
-            onSelect = { UserPreferencesStore.setGradient(it) }
-        )
+    GradientGrid(
+        selected = gradient,
+        onSelect = { UserPreferencesStore.setGradient(it) }
+    )
 
-        Spacer(modifier = Modifier.height(14.dp))
+    Spacer(modifier = Modifier.height(14.dp))
 
-        DetailNote(
-            text = if (spec.isOled) {
-                "OLED mode forces solid surfaces: gradients band on true-black panels and add overdraw. " +
-                    "Your choice applies again in System, Light and Dark."
-            } else {
-                "Gradients are painted by the shared glass container, so every card and surface follows this."
-            }
-        )
-    }
+    DetailNote(
+        text = if (spec.isOled) {
+            "OLED mode forces solid surfaces: gradients band on true-black panels and add overdraw. " +
+                "Your choice applies again in System, Light and Dark."
+        } else {
+            "Gradients are painted by the shared glass container, so every card and surface follows this."
+        }
+    )
 }
 
 /* ------------------------------------------------------------------ */
@@ -589,7 +569,7 @@ private fun ThemingCard() {
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun BackgroundAnimationCard(onRequestAnimation: (BackgroundAnimation) -> Unit) {
+private fun ColumnScope.BackgroundSection(onRequestAnimation: (BackgroundAnimation) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
     val animation by UserPreferencesStore.backgroundAnimation
@@ -602,71 +582,69 @@ private fun BackgroundAnimationCard(onRequestAnimation: (BackgroundAnimation) ->
     val oled = themeMode == ThemeMode.OLED
     val effective = if (oled && !override) BackgroundAnimation.NONE else animation
 
-    GlassCard(frosted = true) {
-        Text(
-            text = "Ambient background",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = scheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(
-            text = "The animated wash behind every screen. It pauses while a list scrolls and whenever " +
-                "the app is in the background.",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant
-        )
+    Text(
+        text = "Ambient background",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = scheme.onSurface
+    )
+    Spacer(modifier = Modifier.height(3.dp))
+    Text(
+        text = "The animated wash behind every screen. It pauses while a list scrolls and whenever " +
+            "the app is in the background.",
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant
+    )
 
-        Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(16.dp))
 
-        BackgroundAnimationGrid(
-            selected = effective,
-            onSelect = { picked ->
-                // Picking an animation while OLED is active raises the battery
-                // warning before anything is stored.
-                if (oled && picked != BackgroundAnimation.NONE) {
-                    onRequestAnimation(picked)
-                } else {
-                    UserPreferencesStore.setBackgroundAnimation(picked)
-                }
+    BackgroundAnimationGrid(
+        selected = effective,
+        onSelect = { picked ->
+            // Picking an animation while OLED is active raises the battery
+            // warning before anything is stored.
+            if (oled && picked != BackgroundAnimation.NONE) {
+                onRequestAnimation(picked)
+            } else {
+                UserPreferencesStore.setBackgroundAnimation(picked)
             }
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        DetailNote(
-            text = when {
-                effective == BackgroundAnimation.NONE && oled && !override ->
-                    "Forced to None because OLED mode is active — animated backgrounds light up pixels " +
-                        "a true-black panel would leave off. Pick a style and confirm the warning to override."
-                effective == BackgroundAnimation.NONE ->
-                    "Nothing is animated: a single static gradient is drawn once, with no animation clock."
-                oled && override ->
-                    "OLED override active. The animation runs at reduced intensity (fewer, dimmer " +
-                        "particles) — May increase battery usage on OLED displays."
-                else ->
-                    "Runs on a single ~30 Hz clock, is skipped while scrolling, and stops completely " +
-                        "when the app is not in the foreground."
-            }
-        )
-
-        if (oled && override) {
-            Spacer(modifier = Modifier.height(10.dp))
-            GlassRow(
-                title = "Reset to None",
-                icon = Icons.Default.Wallpaper,
-                subtitle = "Return to the power-saving default for OLED displays.",
-                onClick = { UserPreferencesStore.setBackgroundAnimation(BackgroundAnimation.NONE) },
-                trailing = {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = scheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            )
         }
+    )
+
+    Spacer(modifier = Modifier.height(14.dp))
+
+    DetailNote(
+        text = when {
+            effective == BackgroundAnimation.NONE && oled && !override ->
+                "Forced to None because OLED mode is active — animated backgrounds light up pixels " +
+                    "a true-black panel would leave off. Pick a style and confirm the warning to override."
+            effective == BackgroundAnimation.NONE ->
+                "Nothing is animated: a single static gradient is drawn once, with no animation clock."
+            oled && override ->
+                "OLED override active. The animation runs at reduced intensity (fewer, dimmer " +
+                    "particles) — May increase battery usage on OLED displays."
+            else ->
+                "Runs on a single ~30 Hz clock, is skipped while scrolling, and stops completely " +
+                    "when the app is not in the foreground."
+        }
+    )
+
+    if (oled && override) {
+        Spacer(modifier = Modifier.height(10.dp))
+        GlassRow(
+            title = "Reset to None",
+            icon = Icons.Default.Wallpaper,
+            subtitle = "Return to the power-saving default for OLED displays.",
+            onClick = { UserPreferencesStore.setBackgroundAnimation(BackgroundAnimation.NONE) },
+            trailing = {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = scheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        )
     }
 }
 
@@ -714,7 +692,7 @@ private val modeEntries = listOf(
 )
 
 @Composable
-private fun PrivilegeCard() {
+private fun ColumnScope.PrivilegeSection() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scheme = MaterialTheme.colorScheme
@@ -731,55 +709,53 @@ private fun PrivilegeCard() {
         }
     }
 
-    GlassCard(frosted = true) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Preferred execution mode",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = scheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-            StatusPill(status = status)
-        }
-        Spacer(modifier = Modifier.height(3.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
-            text = "Active: ${status.activeMode.name}   •   Root: ${if (status.rootGranted) "Granted" else "None"}   •   Shizuku: ${if (status.shizukuGranted) "Granted" else if (status.shizukuRunning) "Pending" else "None"}",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant,
-            fontSize = 12.sp
+            text = "Preferred execution mode",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = scheme.onSurface,
+            modifier = Modifier.weight(1f)
         )
+        StatusPill(status = status)
+    }
+    Spacer(modifier = Modifier.height(3.dp))
+    Text(
+        text = "Active: ${status.activeMode.name}   •   Root: ${if (status.rootGranted) "Granted" else "None"}   •   Shizuku: ${if (status.shizukuGranted) "Granted" else if (status.shizukuRunning) "Pending" else "None"}",
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant,
+        fontSize = 12.sp
+    )
 
-        Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(16.dp))
 
-        TileGrid(items = modeEntries, columns = 2, spacing = 10.dp, aspectRatio = 1f) { tileModifier, entry ->
-            val selected = status.preferredMode == entry.mode
-            SelectableTile(
-                selected = selected,
-                onClick = { selectMode(entry.mode) },
-                modifier = tileModifier,
-                label = entry.label,
-                supporting = entry.short,
-                preview = {
-                    TileIconPreview(
-                        icon = entry.icon,
-                        tint = if (selected) scheme.primary else scheme.onSurfaceVariant,
-                        halo = selected
-                    )
-                }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        DetailNote(
-            text = modeEntries.firstOrNull { it.mode == status.preferredMode }?.detail
-                ?: modeEntries[0].detail
+    TileGrid(items = modeEntries, columns = 2, spacing = 10.dp, aspectRatio = 1f) { tileModifier, entry ->
+        val selected = status.preferredMode == entry.mode
+        SelectableTile(
+            selected = selected,
+            onClick = { selectMode(entry.mode) },
+            modifier = tileModifier,
+            label = entry.label,
+            supporting = entry.short,
+            preview = {
+                TileIconPreview(
+                    icon = entry.icon,
+                    tint = if (selected) scheme.primary else scheme.onSurfaceVariant,
+                    halo = selected
+                )
+            }
         )
     }
+
+    Spacer(modifier = Modifier.height(14.dp))
+
+    DetailNote(
+        text = modeEntries.firstOrNull { it.mode == status.preferredMode }?.detail
+            ?: modeEntries[0].detail
+    )
 }
 
 
@@ -788,7 +764,7 @@ private fun PrivilegeCard() {
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun UpdatesCard() {
+private fun ColumnScope.UpdatesSection() {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
@@ -796,84 +772,82 @@ private fun UpdatesCard() {
     val autoCheck by UserPreferencesStore.autoUpdateCheck
         .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.autoUpdateCheck.value)
 
-    GlassCard(frosted = true) {
-        GlassRow(
-            title = "Check for updates",
-            icon = Icons.Default.SystemUpdate,
-            subtitle = "Reads the latest release from GitHub Releases — no account, no token. " +
-                "Currently on v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}).",
-            onClick = { UpdateRepository.check(context) },
-            trailing = {
-                PillAction(
-                    text = if (checkState is UpdateCheckState.Checking) "Checking…" else "Check now",
-                    onClick = { UpdateRepository.check(context) },
-                    contentDescription = "Check GitHub Releases for a newer build",
-                    enabled = checkState !is UpdateCheckState.Checking
+    GlassRow(
+        title = "Check for updates",
+        icon = Icons.Default.SystemUpdate,
+        subtitle = "Reads the latest release from GitHub Releases — no account, no token. " +
+            "Currently on v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}).",
+        onClick = { UpdateRepository.check(context) },
+        trailing = {
+            PillAction(
+                text = if (checkState is UpdateCheckState.Checking) "Checking…" else "Check now",
+                onClick = { UpdateRepository.check(context) },
+                contentDescription = "Check GitHub Releases for a newer build",
+                enabled = checkState !is UpdateCheckState.Checking
+            )
+        }
+    )
+
+    UpdateStatusLine(
+        checkState = checkState,
+        modifier = Modifier.padding(top = 10.dp)
+    )
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 10.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    GlassRow(
+        title = "Check automatically",
+        icon = Icons.Default.RestartAlt,
+        subtitle = "One check per app launch at most (throttled to every 6 hours). A manual " +
+            "check above always runs.",
+        trailing = {
+            HapticSwitch(
+                checked = autoCheck,
+                onCheckedChange = { UserPreferencesStore.setAutoUpdateCheck(it) }
+            )
+        }
+    )
+
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 10.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
+
+    GlassRow(
+        title = "Release page",
+        icon = Icons.Default.Public,
+        subtitle = "Open the releases in a browser to download an APK manually.",
+        onClick = {
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(UpdateChecker.RELEASES_PAGE_URL))
                 )
             }
-        )
+        },
+        trailing = {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    )
 
-        UpdateStatusLine(
-            checkState = checkState,
-            modifier = Modifier.padding(top = 10.dp)
-        )
+    Spacer(modifier = Modifier.height(12.dp))
 
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 10.dp),
-            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
-            thickness = 0.8.dp
-        )
-
-        GlassRow(
-            title = "Check automatically",
-            icon = Icons.Default.RestartAlt,
-            subtitle = "One check per app launch at most (throttled to every 6 hours). A manual " +
-                "check above always runs.",
-            trailing = {
-                HapticSwitch(
-                    checked = autoCheck,
-                    onCheckedChange = { UserPreferencesStore.setAutoUpdateCheck(it) }
-                )
-            }
-        )
-
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 10.dp),
-            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
-            thickness = 0.8.dp
-        )
-
-        GlassRow(
-            title = "Release page",
-            icon = Icons.Default.Public,
-            subtitle = "Open the releases in a browser to download an APK manually.",
-            onClick = {
-                runCatching {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(UpdateChecker.RELEASES_PAGE_URL))
-                    )
-                }
-            },
-            trailing = {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = scheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        DetailNote(
-            text = "Android requires a confirmation tap for every install — no app can update " +
-                "itself silently without root or device-owner privileges, and this app does not " +
-                "request them for updates. \"Update now\" downloads the APK and opens the system " +
-                "installer; if it is your first time, Android asks you to allow \"install unknown " +
-                "apps\" for Icy Cheak first."
-        )
-    }
+    DetailNote(
+        text = "Android requires a confirmation tap for every install — no app can update " +
+            "itself silently without root or device-owner privileges, and this app does not " +
+            "request them for updates. \"Update now\" downloads the APK and opens the system " +
+            "installer; if it is your first time, Android asks you to allow \"install unknown " +
+            "apps\" for Icy Cheak first."
+    )
 }
 
 /* ------------------------------------------------------------------ */
@@ -881,7 +855,7 @@ private fun UpdatesCard() {
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun PrivacyCard(onRefreshRateClick: () -> Unit) {
+private fun ColumnScope.PrivacySection(onRefreshRateClick: () -> Unit) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
@@ -897,234 +871,226 @@ private fun PrivacyCard(onRefreshRateClick: () -> Unit) {
     // of the last window, which is how the switches above are verified on device.
     val frameReport = rememberFrameReport()
 
-    GlassCard(frosted = true) {
-        GlassRow(
-            title = "Public IP address lookup",
-            icon = Icons.Default.Public,
-            subtitle = "Sends a lightweight request to api.ipify.org to show your external IPv4 in the Network tab.",
-            trailing = {
-                HapticSwitch(
-                    checked = publicIpLookup,
-                    onCheckedChange = { AppSettingsStore.setPublicIpLookup(context, it) }
-                )
-            }
-        )
+    GlassRow(
+        title = "Public IP address lookup",
+        icon = Icons.Default.Public,
+        subtitle = "Sends a lightweight request to api.ipify.org to show your external IPv4 in the Network tab.",
+        trailing = {
+            HapticSwitch(
+                checked = publicIpLookup,
+                onCheckedChange = { AppSettingsStore.setPublicIpLookup(context, it) }
+            )
+        }
+    )
 
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 6.dp),
-            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
-            thickness = 0.8.dp
-        )
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
 
-        GlassRow(
-            title = "Live graphs",
-            icon = Icons.Default.ShowChart,
-            subtitle = if (liveGraphs) {
-                "CPU, RAM, battery and sensor charts redraw continuously while their screen is visible."
-            } else {
-                "Charts are not composed at all: every card shows a flat last-known value instead, and " +
-                    "the telemetry ticker stops if nothing else needs it. The cheapest rendering path."
-            },
-            trailing = {
-                HapticSwitch(
-                    checked = liveGraphs,
-                    onCheckedChange = { UserPreferencesStore.setLiveGraphsEnabled(it) }
-                )
-            }
-        )
+    GlassRow(
+        title = "Live graphs",
+        icon = Icons.Default.ShowChart,
+        subtitle = if (liveGraphs) {
+            "CPU, RAM, battery and sensor charts redraw continuously while their screen is visible."
+        } else {
+            "Charts are not composed at all: every card shows a flat last-known value instead, and " +
+                "the telemetry ticker stops if nothing else needs it. The cheapest rendering path."
+        },
+        trailing = {
+            HapticSwitch(
+                checked = liveGraphs,
+                onCheckedChange = { UserPreferencesStore.setLiveGraphsEnabled(it) }
+            )
+        }
+    )
 
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 6.dp),
-            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
-            thickness = 0.8.dp
-        )
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
 
-        GlassRow(
-            title = "Refresh rate",
-            icon = Icons.Default.Speed,
-            subtitle = "One cadence for every live surface — telemetry, sensors, log auto-refresh and " +
-                "pinned dashboard values. Currently ${refreshRate.label} " +
-                "(${UserPreferencesStore.formatPollInterval(refreshRate.intervalMs)}).",
-            onClick = onRefreshRateClick,
-            trailing = {
-                PillAction(
-                    text = refreshRate.label,
-                    onClick = onRefreshRateClick,
-                    contentDescription = "Change the global refresh rate"
-                )
-            }
-        )
+    GlassRow(
+        title = "Refresh rate",
+        icon = Icons.Default.Speed,
+        subtitle = "One cadence for every live surface — telemetry, sensors, log auto-refresh and " +
+            "pinned dashboard values. Currently ${refreshRate.label} " +
+            "(${UserPreferencesStore.formatPollInterval(refreshRate.intervalMs)}).",
+        onClick = onRefreshRateClick,
+        trailing = {
+            PillAction(
+                text = refreshRate.label,
+                onClick = onRefreshRateClick,
+                contentDescription = "Change the global refresh rate"
+            )
+        }
+    )
 
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 6.dp),
-            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
-            thickness = 0.8.dp
-        )
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
 
-        GlassRow(
-            title = "Frame metrics logging",
-            icon = Icons.Default.Timeline,
-            subtitle = frameReport?.let {
-                "Measured • last ${it.windowMs / 1000} s: ${it.summary()} • ${it.config}"
-            } ?: "Writes a rolling jank summary to logcat (tag DevCheckPerf) together with the " +
-                "settings that produced it, so the two switches above can be measured instead of " +
-                "guessed at. Off costs nothing.",
-            trailing = {
-                HapticSwitch(
-                    checked = frameMetrics,
-                    onCheckedChange = { UserPreferencesStore.setFrameMetricsLogging(it) }
-                )
-            }
-        )
-    }
+    GlassRow(
+        title = "Frame metrics logging",
+        icon = Icons.Default.Timeline,
+        subtitle = frameReport?.let {
+            "Measured • last ${it.windowMs / 1000} s: ${it.summary()} • ${it.config}"
+        } ?: "Writes a rolling jank summary to logcat (tag DevCheckPerf) together with the " +
+            "settings that produced it, so the two switches above can be measured instead of " +
+            "guessed at. Off costs nothing.",
+        trailing = {
+            HapticSwitch(
+                checked = frameMetrics,
+                onCheckedChange = { UserPreferencesStore.setFrameMetricsLogging(it) }
+            )
+        }
+    )
 }
 
 @Composable
-private fun ExportCard(onExport: () -> Unit, onSectionsClick: () -> Unit) {
+private fun ColumnScope.ExportSection(onExport: () -> Unit, onSectionsClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
     val sections by UserPreferencesStore.reportSections
         .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.reportSections.value)
     val allIncluded = sections.size == ReportSection.ALL.size
 
-    GlassCard(frosted = true) {
-        GlassRow(
-            title = "Export device report",
-            icon = Icons.Default.Share,
-            subtitle = "Full dump of the selected categories as readable text or structured JSON, sent " +
-                "through the Android share sheet.",
-            onClick = onExport,
-            trailing = {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = scheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        )
+    GlassRow(
+        title = "Export device report",
+        icon = Icons.Default.Share,
+        subtitle = "Full dump of the selected categories as readable text or structured JSON, sent " +
+            "through the Android share sheet.",
+        onClick = onExport,
+        trailing = {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    )
 
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 6.dp),
-            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
-            thickness = 0.8.dp
-        )
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+        thickness = 0.8.dp
+    )
 
-        GlassRow(
-            title = "What is included",
-            icon = Icons.Default.Info,
-            subtitle = if (allIncluded) {
-                "Hardware • Software • Battery • Storage • Network • Processes • Installed apps • " +
-                    "Sensors • live telemetry. Tap to choose."
-            } else {
-                sections.sortedBy { it.ordinal }.joinToString(" • ") { it.label } +
-                    ". Tap to choose."
-            },
-            onClick = onSectionsClick,
-            trailing = {
-                PillAction(
-                    text = if (allIncluded) {
-                        "${ReportSection.ALL.size} sections"
-                    } else {
-                        "${sections.size} of ${ReportSection.ALL.size}"
-                    },
-                    onClick = onSectionsClick,
-                    contentDescription = "Choose which sections the exported report contains"
-                )
-            }
-        )
-    }
+    GlassRow(
+        title = "What is included",
+        icon = Icons.Default.Info,
+        subtitle = if (allIncluded) {
+            "Hardware • Software • Battery • Storage • Network • Processes • Installed apps • " +
+                "Sensors • live telemetry. Tap to choose."
+        } else {
+            sections.sortedBy { it.ordinal }.joinToString(" • ") { it.label } +
+                ". Tap to choose."
+        },
+        onClick = onSectionsClick,
+        trailing = {
+            PillAction(
+                text = if (allIncluded) {
+                    "${ReportSection.ALL.size} sections"
+                } else {
+                    "${sections.size} of ${ReportSection.ALL.size}"
+                },
+                onClick = onSectionsClick,
+                contentDescription = "Choose which sections the exported report contains"
+            )
+        }
+    )
 }
 
 @Composable
-private fun GeneralCard(onResetOnboarding: () -> Unit) {
-    GlassCard(frosted = true) {
-        GlassRow(
-            title = "Relaunch onboarding setup",
-            icon = Icons.Default.RestartAlt,
-            subtitle = "Run the elevated-access configuration wizard again.",
-            onClick = onResetOnboarding,
-            trailing = {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        )
-    }
+private fun ColumnScope.GeneralSection(onResetOnboarding: () -> Unit) {
+    GlassRow(
+        title = "Relaunch onboarding setup",
+        icon = Icons.Default.RestartAlt,
+        subtitle = "Run the elevated-access configuration wizard again.",
+        onClick = onResetOnboarding,
+        trailing = {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    )
 }
 
 @Composable
-private fun AboutCard() {
+private fun ColumnScope.AboutSection() {
     val scheme = MaterialTheme.colorScheme
     val status = rememberPrivilegeStatus()
     val themeMode by AppSettingsStore.themeMode.collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
     val dynamicColor by AppSettingsStore.dynamicColor.collectAsStateWithLifecycle(initialValue = AppSettingsStore.dynamicColor.value)
 
-    GlassCard(frosted = true) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(scheme.primary.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(scheme.primary.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Bolt,
-                    contentDescription = null,
-                    tint = scheme.primary,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Icy Cheak v${BuildConfig.VERSION_NAME}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = scheme.onSurface
-                )
-                Text(
-                    text = "Deep hardware & system inspector",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant
-                )
-            }
+            Icon(
+                imageVector = Icons.Default.Bolt,
+                contentDescription = null,
+                tint = scheme.primary,
+                modifier = Modifier.size(22.dp)
+            )
         }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Icy Cheak v${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = scheme.onSurface
+            )
+            Text(
+                text = "Deep hardware & system inspector",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant
+            )
+        }
+    }
 
-        Spacer(modifier = Modifier.height(12.dp))
+    Spacer(modifier = Modifier.height(12.dp))
 
-        Text(
-            text = "100% Free, Ad-Free & Open Source system inspector with Libsu Root & Shizuku elevation.",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant,
-            lineHeight = 18.sp
+    Text(
+        text = "100% Free, Ad-Free & Open Source system inspector with Libsu Root & Shizuku elevation.",
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant,
+        lineHeight = 18.sp
+    )
+
+    Spacer(modifier = Modifier.height(14.dp))
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        InfoPill(label = "THEME", value = themeMode.label, modifier = Modifier.weight(1f))
+        InfoPill(
+            label = "ACCESS",
+            value = if (status.activeMode == PrivilegeMode.NONE) "Std" else status.activeMode.name,
+            modifier = Modifier.weight(1f)
         )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            InfoPill(label = "THEME", value = themeMode.label, modifier = Modifier.weight(1f))
-            InfoPill(
-                label = "ACCESS",
-                value = if (status.activeMode == PrivilegeMode.NONE) "Std" else status.activeMode.name,
-                modifier = Modifier.weight(1f)
-            )
-            InfoPill(
-                label = "MATERIAL YOU",
-                value = if (dynamicColor) "On" else "Off",
-                modifier = Modifier.weight(1f)
-            )
-        }
+        InfoPill(
+            label = "MATERIAL YOU",
+            value = if (dynamicColor) "On" else "Off",
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
