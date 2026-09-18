@@ -48,11 +48,14 @@ jobs:
       - name: Restore Android debug keystore
         uses: actions/cache@v4
         with:
-          # The whole directory, not just the .keystore file: the file is only created
-          # when something actually needs signing, and caching the directory means a
-          # first build that skips packaging still preserves whatever is generated.
-          path: ~/.android
-          key: android-debug-keystore-v1
+          # Measured location, not assumed: AGP 8 keeps the generated debug keystore in
+          # the XDG config directory — /home/runner/.config/.android/debug.keystore —
+          # which is why caching ~/.android saved nothing. Both directories are cached
+          # so a future relocation cannot silently break the signing identity again.
+          path: |
+            ~/.config/.android
+            ~/.android
+          key: android-debug-keystore-v2
 
       - name: Resolve version name
         id: version
