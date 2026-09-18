@@ -48,8 +48,14 @@ jobs:
       - name: Restore Android debug keystore
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
+          # Measured location, not assumed: AGP 8 keeps the generated debug keystore in
+          # the XDG config directory — /home/runner/.config/.android/debug.keystore —
+          # which is why caching ~/.android saved nothing. Both directories are cached
+          # so a future relocation cannot silently break the signing identity again.
+          path: |
+            ~/.config/.android
+            ~/.android
+          key: android-debug-keystore-v2
 
       - name: Resolve version name
         id: version
@@ -141,6 +147,26 @@ jobs:
           echo "::notice title=APK built::$APK ($SIZE bytes)"
           echo "path=$APK" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "$APK")" >> "$GITHUB_OUTPUT"
+
+      # Proves (or disproves) that consecutive builds share one signing identity, by
+      # reporting the fingerprint of the keystore that signed this build. Two runs with
+      # the same SHA-256 can update each other; different fingerprints mean the user
+      # would have to uninstall first.
+      - name: Report signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ANDROID_SDK_HOME=${ANDROID_SDK_HOME:-unset} ANDROID_USER_HOME=${ANDROID_USER_HOME:-unset}"
+          FOUND=0
+          while IFS= read -r ks; do
+            [ -n "$ks" ] || continue
+            FOUND=1
+            FP=$(keytool -list -v -keystore "$ks" -storepass android -alias androiddebugkey 2>/dev/null | grep -m1 'SHA256:' | sed 's/^ *//' || echo 'SHA256: unreadable')
+            echo "::notice title=Signing keystore::${ks} | ${FP}"
+          done < <(find "$HOME" -maxdepth 4 -name '*.keystore' 2>/dev/null || true)
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::warning title=Signing keystore::no keystore found under $HOME — the APK was not signed on this runner"
+          fi
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
