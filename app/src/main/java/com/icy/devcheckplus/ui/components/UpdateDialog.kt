@@ -85,7 +85,7 @@ fun UpdateDialogHost() {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "${info.releaseName ?: "DevCheck+"} — v${info.versionName}",
+                    text = "${info.releaseName ?: "Icy Cheak"} — v${info.versionName}",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -180,7 +180,7 @@ private fun DownloadSection(
                     "Downloaded. Android will ask you to confirm the install — " +
                         "the app closes and reopens once it is applied."
                 } else {
-                    "Downloaded. Allow \"install unknown apps\" for DevCheck+ first — Android blocks " +
+                    "Downloaded. Allow \"install unknown apps\" for Icy Cheak first — Android blocks " +
                         "every other app from installing packages."
                 },
                 style = MaterialTheme.typography.bodySmall,

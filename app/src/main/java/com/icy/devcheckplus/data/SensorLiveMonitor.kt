@@ -78,7 +78,7 @@ class SensorLiveMonitor(
 
     fun startListening() {
         if (workerHandler != null) return
-        val thread = HandlerThread("DevCheck-Sensors").also { it.start() }
+        val thread = HandlerThread("IcyCheak-Sensors").also { it.start() }
         val handler = Handler(thread.looper)
         workerThread = thread
         workerHandler = handler

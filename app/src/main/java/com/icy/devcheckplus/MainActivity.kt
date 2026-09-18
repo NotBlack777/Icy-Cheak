@@ -229,7 +229,7 @@ fun MainDashboardScreen(
                         .padding(20.dp)
                 ) {
                     Text(
-                        text = "DevCheck+",
+                        text = "Icy Cheak",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary

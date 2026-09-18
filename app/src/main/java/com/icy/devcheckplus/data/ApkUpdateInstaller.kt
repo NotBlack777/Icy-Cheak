@@ -79,7 +79,7 @@ object ApkUpdateInstaller {
     ): Result<File> = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         try {
-            val target = File(updateDirectory(context), asset.name.ifBlank { "DevCheckPlus-update.apk" })
+            val target = File(updateDirectory(context), asset.name.ifBlank { "IcyCheak-update.apk" })
             if (target.exists()) target.delete()
             // Only one APK is ever needed: drop leftovers from earlier versions so
             // the cache cannot grow with every release.
@@ -93,7 +93,7 @@ object ApkUpdateInstaller {
                 readTimeout = READ_TIMEOUT_MS
                 instanceFollowRedirects = true
                 setRequestProperty("Accept", "application/octet-stream")
-                setRequestProperty("User-Agent", "DevCheckPlus")
+                setRequestProperty("User-Agent", "IcyCheak")
             }
 
             val code = connection.responseCode

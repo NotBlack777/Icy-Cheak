@@ -88,7 +88,7 @@ fun OnboardingScreen(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = "DevCheck+",
+                        text = "Icy Cheak",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
@@ -179,7 +179,7 @@ fun OnboardingScreen(
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Text(
-                    text = "Continue to DevCheck+",
+                    text = "Continue to Icy Cheak",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold
                 )

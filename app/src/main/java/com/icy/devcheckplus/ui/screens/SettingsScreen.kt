@@ -868,7 +868,7 @@ private fun UpdatesCard() {
                 "itself silently without root or device-owner privileges, and this app does not " +
                 "request them for updates. \"Update now\" downloads the APK and opens the system " +
                 "installer; if it is your first time, Android asks you to allow \"install unknown " +
-                "apps\" for DevCheck+ first."
+                "apps\" for Icy Cheak first."
         )
     }
 }
@@ -1030,7 +1030,7 @@ private fun AboutCard() {
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "DevCheck+ v${BuildConfig.VERSION_NAME}",
+                    text = "Icy Cheak v${BuildConfig.VERSION_NAME}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = scheme.onSurface

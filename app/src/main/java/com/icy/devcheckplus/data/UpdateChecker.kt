@@ -83,7 +83,7 @@ object UpdateChecker {
                     readTimeout = READ_TIMEOUT_MS
                     setRequestProperty("Accept", "application/vnd.github+json")
                     setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-                    setRequestProperty("User-Agent", "DevCheckPlus/${BuildConfig.VERSION_NAME}")
+                    setRequestProperty("User-Agent", "IcyCheak/${BuildConfig.VERSION_NAME}")
                 }
                 val code = connection.responseCode
                 if (code == 404) {
