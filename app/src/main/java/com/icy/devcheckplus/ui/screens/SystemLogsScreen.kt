@@ -48,7 +48,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.LogcatDataProvider
 import com.icy.devcheckplus.model.LogcatEntry
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.LocalSearchFocus
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.components.locateRowIndex
+import com.icy.devcheckplus.ui.components.rememberMatchHighlight
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange

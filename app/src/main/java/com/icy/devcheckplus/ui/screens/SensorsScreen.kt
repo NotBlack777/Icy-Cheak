@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.SensorLiveMonitor
 import com.icy.devcheckplus.model.SensorLiveData
 import com.icy.devcheckplus.ui.components.GlassCard

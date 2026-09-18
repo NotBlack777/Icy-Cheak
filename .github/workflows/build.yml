@@ -74,14 +74,42 @@ jobs:
             echo "::error title=Gradle::build.log is missing — Gradle never started."
             exit 0
           fi
+
           if grep -qE "^e: " build.log; then
             COUNT=$(grep -cE "^e: " build.log)
-            MSG=$(grep -E "^e: " build.log | head -40 | tr '\n' '|')
-            echo "::error title=Kotlin errors ($COUNT)::${MSG:0:6000}"
+            grep -E "^e: " build.log | sed 's#file:///home/runner/work/Icy-Cheak/Icy-Cheak/##' > errors.txt
+            echo "::error title=Build failed::${COUNT} Kotlin error lines — full list in the annotations below and in the build-log artifact."
           else
-            MSG=$(tail -n 40 build.log | tr '\n' '|')
-            echo "::error title=Gradle output tail::${MSG:0:6000}"
+            tail -n 200 build.log > errors.txt
+            echo "::error title=Build failed::Gradle failed before Kotlin compilation — see the output tail in the annotations below."
           fi
+
+          # A single annotation message is capped at 4096 characters, so the error
+          # list is emitted in chunks instead of being silently truncated.
+          CHUNK=""
+          while IFS= read -r line; do
+            if [ $(( ${#CHUNK} + ${#line} )) -gt 3000 ]; then
+              echo "::error title=Build errors::${CHUNK}"
+              CHUNK=""
+            fi
+            CHUNK="${CHUNK}${line}|"
+          done < errors.txt
+          if [ -n "$CHUNK" ]; then
+            echo "::error title=Build errors::${CHUNK}"
+          fi
+
+      # The raw log is the ground truth; keep it attached to the run so it can be
+      # fetched later even after the annotations have been read.
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: IcyCheak-build-log
+          path: |
+            build.log
+            errors.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       # Independent verification that the build actually produced an installable APK.
       # Without this, an empty `app/build/outputs` still yielded a green run.

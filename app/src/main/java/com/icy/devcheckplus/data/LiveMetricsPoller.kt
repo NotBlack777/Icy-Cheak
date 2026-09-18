@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -93,7 +94,7 @@ object LiveMetricsPoller {
             flow {
                 val context = appContext ?: return@flow
                 emit(LiveMetricsRepository.snapshot())
-                while (isActive) {
+                while (currentCoroutineContext().isActive) {
                     emit(LiveMetricsRepository.sample(context, period))
                     delay(period)
                 }
