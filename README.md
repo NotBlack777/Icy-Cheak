@@ -1,6 +1,6 @@
-# DevCheck+ 🔍⚡
+# Icy Cheak 🔍⚡
 
-**DevCheck+** is an advanced, modern Android hardware, OS, and device inspector inspired by Dev Check, enhanced with elevated privileges via **Root (libsu)** and **Shizuku API**.
+**Icy Cheak** is an advanced, modern Android hardware, OS, and device inspector, enhanced with elevated privileges via **Root (libsu)** and **Shizuku API**.
 
 - 💸 **100% Free and Open Source**
 - 🛡️ **Zero Ads, Zero Tracking, Zero Analytics**
@@ -64,6 +64,16 @@
 
 10. **Settings & Privilege Engine**
     - Dynamic privilege switcher: **Auto**, **Root Superuser**, **Shizuku**, or **Standard Mode**.
+    - **Colors & Theming**: six accent palettes applied app-wide through the Material 3 colour
+      roles, plus surface gradients (*Default*, *Solid*, *Ocean*, *Sunset*, *Void*).
+    - **Background animation**: *Gradient Drift*, *Particles* or *None* — forced to *None* in
+      OLED mode unless you confirm the battery warning.
+    - **Live telemetry polling**: pick 0.5 s / 1 s / 2 s / 5 s; CPU, RAM and battery share one
+      sampling loop that stops when the app is not in the foreground.
+    - **Report sections**: choose which of the nine categories an exported device report contains.
+    - **Section organizer**: drag Settings sections into any order, or hide the ones you never use.
+    - **Updates**: check GitHub Releases automatically (throttled) or on demand, and install a
+      newer build from inside the app.
     - Relaunch onboarding setup at any time.
     - Toggle public IP lookup.
 
@@ -77,13 +87,13 @@ On modern Android (Android 6.0+ through Android 14+), SELinux restrictions and A
 - Reading system-wide `logcat` buffers
 - Reading kernel battery cycle counters from `/sys/class/power_supply/battery/`
 
-### How DevCheck+ Handles Access Gracefully
+### How Icy Cheak Handles Access Gracefully
 - **Zero Crashes**: All elevated calls are wrapped safely with graceful fallbacks. If neither Root nor Shizuku is granted, individual items clearly show `"Unavailable — requires root or Shizuku"`.
 - **Root (libsu)**: Uses `com.github.topjohnwu.libsu` to run commands with standard superuser authorization prompts.
 - **Shizuku**: Uses the official `dev.rikka.shizuku` API to execute privileged ADB commands without needing root.
 
 ### How to Install and Start Shizuku (Non-Root Users)
-If your device is not rooted, you can easily use Shizuku to grant DevCheck+ elevated permissions:
+If your device is not rooted, you can easily use Shizuku to grant Icy Cheak elevated permissions:
 1. Install **Shizuku** from Google Play or the [Shizuku GitHub Releases](https://github.com/RikkaApps/Shizuku/releases).
 2. Start Shizuku:
    - **Wireless Debugging (Android 11+)**: Enable Developer Options -> Wireless Debugging -> Pair with Shizuku using the pairing code -> Tap **Start** in Shizuku.
@@ -91,7 +101,7 @@ If your device is not rooted, you can easily use Shizuku to grant DevCheck+ elev
      ```bash
      adb shell sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh
      ```
-3. Open **DevCheck+** and grant Shizuku permission when prompted on the onboarding screen or in Settings.
+3. Open **Icy Cheak** and grant Shizuku permission when prompted on the onboarding screen or in Settings.
 
 ---
 
@@ -106,15 +116,49 @@ If your device is not rooted, you can easily use Shizuku to grant DevCheck+ elev
 
 ---
 
-## 🚀 Automated CI / CD & Downloading the APK
+## 🚀 Automated Builds, Releases & In-App Updates
 
-This repository is set up with GitHub Actions in `.github/workflows/build.yml`.
+Everything is driven by `.github/workflows/build.yml`.
 
-### Download Prebuilt Debug APK
-1. Go to the **Actions** tab of this repository on GitHub.
-2. Click on the latest workflow run for the `main` or working branch.
-3. Scroll down to the **Artifacts** section at the bottom of the summary page.
-4. Download the `DevCheckPlus-Debug-APK` zip file, extract it, and install `app-debug.apk` directly on your Android device!
+### Every push
+The workflow builds `assembleDebug`, then **verifies that an APK was actually produced** and
+publishes its path and size as a check-run annotation. A build that fails to package anything
+fails the run — the pipeline is deliberately not allowed to report success without an APK.
+
+### Every push to `main`
+A GitHub Release is created (or updated) tagged `v<versionName>`, with the APK attached as
+`IcyCheak-<versionName>.apk`. The workflow and `app/build.gradle.kts` derive the version from
+the same source (`GITHUB_RUN_NUMBER`), so the tag can never drift from `BuildConfig`, and
+`versionCode` increases with every release.
+
+Releases — not workflow artifacts — are the download channel, because artifact downloads
+require authentication and expire after the retention window. When you *do* want the raw
+artifact of a run, it is still attached as `IcyCheak-Debug-APK`.
+
+### Updating the app
+**Settings › Updates › Check now** (or the automatic check on launch, throttled to once every
+six hours) reads
+`https://api.github.com/repos/NotBlack777/Icy-Cheak/releases/latest`, compares the release
+version with the installed build, and offers *Update now* / *Later*. *Update now* downloads the
+APK into a private cache directory, verifies it is really an APK, and hands it to the system
+package installer.
+
+Android requires a confirmation tap for every install, and this app deliberately does not use
+root or device-owner privileges for updates — so the final dialog is expected behaviour, not a
+bug. On first use Android also asks you to allow "install unknown apps" for the app; the app
+offers a shortcut to that exact settings screen.
+
+Releases are signed with the Android debug keystore that CI caches across runs, so consecutive
+releases share one signing identity and install over each other. (Builds published before that
+cache existed were signed with a throwaway key: uninstall once, then updates work in place.)
+
+### Building locally
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/NotBlack777/Icy-Cheak.git
+   ```
+2. Open the project in Android Studio (Jellyfish / Koala or newer recommended).
+3. Let Gradle sync and run `./gradlew assembleDebug` or click **Run ▶** to deploy to an emulator or physical device.
 
 ### Building Locally with Android Studio
 1. Clone the repository:
@@ -128,4 +172,4 @@ This repository is set up with GitHub Actions in `.github/workflows/build.yml`.
 
 ## 📄 License
 
-DevCheck+ is open-source under the Apache 2.0 License.
+Icy Cheak is open-source under the Apache 2.0 License.
