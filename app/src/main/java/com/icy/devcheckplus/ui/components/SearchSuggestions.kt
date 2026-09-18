@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -37,8 +39,33 @@ fun SearchSuggestionRow(
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (suggestions.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
+    if (suggestions.isEmpty()) {
+        // Friendly empty state rather than an empty strip: on a fresh install the
+        // bar explains itself, and the row keeps its slot so nothing jumps once the
+        // first search is recorded.
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.History,
+                contentDescription = null,
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(start = 10.dp, end = 8.dp)
+                    .size(14.dp)
+            )
+            Text(
+                text = "Your recent searches appear here — type two characters and pause.",
+                fontSize = 11.sp,
+                color = scheme.onSurfaceVariant
+            )
+        }
+        return
+    }
     val tick = rememberHapticTick()
 
     Row(
@@ -60,13 +87,14 @@ fun SearchSuggestionRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             contentPadding = PaddingValues(vertical = 2.dp)
         ) {
-            items(suggestions) { term ->
+            items(items = suggestions, key = { it }) { term ->
                 FilterChip(
                     selected = false,
                     onClick = {
                         tick()
                         onSuggestionClick(term)
                     },
+                    modifier = Modifier.heightIn(min = 48.dp),
                     label = {
                         Text(
                             text = term,
@@ -88,7 +116,9 @@ fun SearchSuggestionRow(
         }
         IconButton(
             onClick = onClearHistory,
-            modifier = Modifier.size(34.dp)
+            // Kept at the platform minimum touch target (48 dp) — the icon inside
+            // stays small, the tappable area does not.
+            modifier = Modifier.size(48.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Close,

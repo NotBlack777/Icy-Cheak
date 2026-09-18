@@ -1,9 +1,9 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">DevCheck+</string>
+    <string name="app_name">Icy Cheak</string>
 
     <!-- Home screen widget -->
-    <string name="widget_name">DevCheck+ Metrics</string>
-    <string name="widget_title">DevCheck+</string>
+    <string name="widget_name">Icy Cheak Metrics</string>
+    <string name="widget_title">Icy Cheak</string>
     <string name="widget_description">Live battery, RAM and CPU frequency on your home screen.</string>
     <string name="widget_battery_label">BATTERY</string>
     <string name="widget_ram_label">RAM</string>

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -45,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.data.LogcatDataProvider
 import com.icy.devcheckplus.model.LogcatEntry
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
@@ -59,6 +63,7 @@ private const val LOG_LINE_LIMIT = 150
 @Composable
 fun SystemLogsScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     var logs by remember { mutableStateOf<List<LogcatEntry>>(emptyList()) }
@@ -69,6 +74,8 @@ fun SystemLogsScreen(
     val foreground = rememberIsForeground()
 
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     fun fetchLogs() {
         scope.launch {
@@ -141,6 +148,9 @@ fun SystemLogsScreen(
                 FilterChip(
                     selected = selectedLevel == lvl,
                     onClick = { tick(); selectedLevel = lvl },
+                    // Small label, full-size target: the chip keeps the 48 dp
+                    // platform minimum so it stays reachable.
+                    modifier = Modifier.heightIn(min = 48.dp),
                     label = { Text(lvl, fontSize = 11.sp) }
                 )
             }
@@ -176,11 +186,29 @@ fun SystemLogsScreen(
                 }
             }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(filtered) { entry ->
+            LocateMatchEffect(
+                listState = listState,
+                token = locateToken,
+                targetIndex = locateRowIndex(
+                    items = filtered,
+                    query = searchQuery,
+                    predicate = { entry, query ->
+                        entry.message.contains(query, true) ||
+                            entry.tag.contains(query, true) ||
+                            entry.level.equals(query, ignoreCase = true)
+                    }
+                )
+            )
+
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                items(
+                    items = filtered,
+                    key = { "${it.timestamp}-${it.pid}-${it.tag}-${it.message.hashCode()}" },
+                    contentType = { "log" }
+                ) { entry ->
                     LogEntryCard(entry = entry)
                 }
-                item {
+                item(key = "logs_bottom_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
@@ -190,6 +218,9 @@ fun SystemLogsScreen(
 
 @Composable
 fun LogEntryCard(entry: LogcatEntry) {
+    val focus = LocalSearchFocus.current
+    val isMatch = focus.active && (focus.matches(entry.message) || focus.matches(entry.tag))
+    val highlight = rememberMatchHighlight(active = isMatch, trigger = focus.token)
     val levelColor = when (entry.level.uppercase()) {
         "E", "F" -> AccentRed
         "W" -> AccentOrange
@@ -198,10 +229,18 @@ fun LogEntryCard(entry: LogcatEntry) {
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
+    val scheme = MaterialTheme.colorScheme
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 3.dp),
+            .padding(horizontal = 16.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(8.dp))
+            // Pulse drawn on top of the card instead of behind it, because a Card
+            // paints its own container colour after the caller's modifiers.
+            .drawWithContent {
+                drawContent()
+                if (highlight > 0f) drawRect(color = scheme.primary, alpha = highlight)
+            },
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),

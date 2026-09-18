@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -41,6 +42,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
+import com.icy.devcheckplus.ui.theme.solidSurface
+import com.icy.devcheckplus.ui.theme.surfaceBrush
 
 /**
  * "Liquid glass" building blocks.
@@ -67,10 +70,19 @@ fun GlassCard(
     val spec = LocalGlassSpec.current
     val scheme = MaterialTheme.colorScheme
 
+    // Read in this small scope (the card itself, not the screen): scrolling
+    // start/stop is the only thing that invalidates it, and the content lambda
+    // below is skipped because its parameters did not change. During a fling the
+    // per-card offscreen layers (elevation shadow + blur) are simply not
+    // requested, which is what removes the frame drops on long lists; they come
+    // back the moment the finger lifts.
+    val scrolling = LocalScrollActivity.current.value
+    val elevation = if (scrolling) 0.dp else spec.cardElevation
+
     Box(
         modifier = modifier
             .shadow(
-                elevation = spec.cardElevation,
+                elevation = elevation,
                 shape = shape,
                 clip = false,
                 ambientColor = ShadowTint,
@@ -81,23 +93,26 @@ fun GlassCard(
         if (frosted) {
             FrostedLayer(
                 shape = shape,
-                radius = spec.cardBlurRadius,
+                radius = if (scrolling) 0.dp else spec.cardBlurRadius,
                 primary = scheme.primary,
                 tertiary = scheme.tertiary,
                 modifier = Modifier.matchParentSize()
             )
         }
-        // Semi-transparent surface tint (the "glass" body).
+        // Semi-transparent surface tint (the "glass" body), painted with the
+        // user's gradient style — Solid paints a flat colour instead.
+        val surfaceBrush = remember(scheme, spec.cardAlpha, spec.gradientStyle) {
+            spec.gradientStyle.surfaceBrush(scheme, spec.cardAlpha)
+        }
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            scheme.surface.copy(alpha = (spec.cardAlpha + 0.10f).coerceAtMost(1f)),
-                            scheme.surface.copy(alpha = spec.cardAlpha)
-                        )
-                    )
+                .then(
+                    if (surfaceBrush != null) {
+                        Modifier.background(surfaceBrush)
+                    } else {
+                        Modifier.background(spec.gradientStyle.solidSurface(scheme, spec.cardAlpha))
+                    }
                 )
         )
         GlassEdges(shape = shape, borderAlpha = spec.borderAlpha, sheenAlpha = spec.sheenAlpha, modifier = Modifier.matchParentSize())
@@ -122,19 +137,30 @@ fun GlassTopBar(
 ) {
     val spec = LocalGlassSpec.current
     val scheme = MaterialTheme.colorScheme
+    // Same rule as cards: no offscreen blur layer while the content below scrolls.
+    val scrolling = LocalScrollActivity.current.value
 
     Box(modifier = modifier.clip(shape)) {
         FrostedLayer(
             shape = shape,
-            radius = spec.barBlurRadius,
+            radius = if (scrolling) 0.dp else spec.barBlurRadius,
             primary = scheme.primary,
             tertiary = scheme.secondary,
             modifier = Modifier.matchParentSize()
         )
+        val barBrush = remember(scheme, spec.barAlpha, spec.gradientStyle) {
+            spec.gradientStyle.surfaceBrush(scheme, spec.barAlpha)
+        }
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .background(scheme.surface.copy(alpha = spec.barAlpha))
+                .then(
+                    if (barBrush != null) {
+                        Modifier.background(barBrush)
+                    } else {
+                        Modifier.background(spec.gradientStyle.solidSurface(scheme, spec.barAlpha))
+                    }
+                )
         )
         // Hairline at the bottom edge only.
         Box(

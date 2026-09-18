@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,7 +33,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,21 +47,33 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.PinnableCategory
 import com.icy.devcheckplus.data.PinnedEntry
 import com.icy.devcheckplus.data.PinnedItemKey
 import com.icy.devcheckplus.data.PinnedItemsStore
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.GlassEmptyState
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.LocalSearchFocus
+import com.icy.devcheckplus.ui.components.MatchHighlightShape
+import com.icy.devcheckplus.ui.components.rememberMatchHighlight
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.PinToggleButton
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.rememberIsForeground
-import com.icy.devcheckplus.ui.components.rememberLiveMetrics
+import com.icy.devcheckplus.ui.components.rememberLiveMetric
+import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Dashboard: every pinned row in one glanceable view.
@@ -71,10 +83,17 @@ import java.util.Locale
  * categories that actually contain pins, in parallel and behind watchdogs, and
  * the work is re-triggered when the pin set changes, when the app returns to the
  * foreground, or when the user hits refresh.
+ *
+ * Recomposition note: this composable deliberately reads *no* telemetry value.
+ * The live tiles at the bottom are separate leaves that each subscribe to the
+ * single field they display, so one poll tick repaints three small tiles instead
+ * of the pinned list, the header card and the whole screen.
  */
+@OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun DashboardScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -82,7 +101,7 @@ fun DashboardScreen(
     val scheme = MaterialTheme.colorScheme
     val foreground = rememberIsForeground()
 
-    val pinnedKeys by PinnedItemsStore.pinnedKeys(context).collectAsState(initial = emptySet())
+    val pinnedKeys by PinnedItemsStore.pinnedKeys(context).collectAsStateWithLifecycle(initialValue = emptySet())
     val hasPins = pinnedKeys.isNotEmpty()
     val pins = remember(pinnedKeys, searchQuery) {
         val query = searchQuery.trim()
@@ -123,153 +142,119 @@ fun DashboardScreen(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        Spacer(modifier = Modifier.height(10.dp))
+    // Manual fallback alongside polling: pull the dashboard down to re-read every
+    // pinned category. The same `reloadToken` the refresh button bumps, so both
+    // entry points share one code path (and its watchdogs).
+    val pullState = rememberPullRefreshState(
+        refreshing = loading,
+        onRefresh = { reloadToken++ }
+    )
 
-        GlassCard(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(18.dp),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-            frosted = false
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(11.dp))
-                        .background(scheme.primary.copy(alpha = 0.14f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = null,
-                        tint = scheme.primary,
-                        modifier = Modifier.size(19.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Dashboard",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = scheme.onSurface
-                    )
-                    Text(
-                        text = when {
-                            !hasPins -> "Star any row to pin it here"
-                            pins.isEmpty() -> "No pinned row matches \"$searchQuery\""
-                            loading -> "Resolving pinned values…"
-                            lastUpdated != null -> "${pins.size} pinned • updated $lastUpdated"
-                            else -> "${pins.size} pinned"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = scheme.primary,
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                }
-                IconButton(
-                    onClick = { reloadToken++ },
-                    enabled = pins.isNotEmpty() && !loading
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Refresh pinned values",
-                        tint = scheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(
-                    onClick = { showClearDialog = true },
-                    enabled = hasPins
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Unpin everything",
-                        tint = scheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .pullRefresh(pullState)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Spacer(modifier = Modifier.height(10.dp))
 
-        if (!hasPins) {
-            EmptyDashboard(modifier = Modifier.weight(1f))
-        } else if (pins.isEmpty()) {
-            // Everything is pinned, nothing matches the active search.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No pinned row matches \"$searchQuery\"",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+            DashboardHeaderCard(
+                hasPins = hasPins,
+                matchCount = pins.size,
+                searchQuery = searchQuery,
+                loading = loading,
+                lastUpdated = lastUpdated,
+                onRefresh = { reloadToken++ },
+                onClearClick = { showClearDialog = true }
+            )
+
+            if (!hasPins) {
+                EmptyDashboard(modifier = Modifier.weight(1f))
+            } else if (pins.isEmpty()) {
+                // Rows are pinned, but none matches the active search.
+                GlassEmptyState(
+                    icon = Icons.Default.SearchOff,
+                    title = "No pinned row matches \"$searchQuery\"",
+                    message = "Pinned rows are matched on their name, their section and their category. " +
+                        "Clear the search to see all ${pinnedKeys.size} of them.",
+                    modifier = Modifier.weight(1f)
                 )
-            }
-        } else {
-            val listState = rememberLazyListState()
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentPadding = PaddingValues(bottom = 28.dp)
-            ) {
-                grouped.forEach { (category, rows) ->
-                    item(key = "header_${category.name}") {
-                        GlassSectionHeader(
-                            title = category.label.uppercase(Locale.US),
-                            icon = Icons.Default.Star,
-                            supporting = "${rows.size} pinned"
-                        )
+            } else {
+                val listState = rememberLazyListState()
+                TrackScrollActivity(listState)
+
+                // Two items are emitted per category (its header and its card), so the
+                // first match locates its group at `group * 2`.
+                val locatedGroup = remember(grouped, searchQuery) {
+                    if (searchQuery.isBlank()) -1 else grouped.indexOfFirst { (_, rows) ->
+                        rows.any {
+                            it.key.item.contains(searchQuery, ignoreCase = true) ||
+                                it.key.section.contains(searchQuery, ignoreCase = true)
+                        }
                     }
-                    item(key = "card_${category.name}") {
-                        GlassCard(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                            frosted = false
-                        ) {
-                            rows.forEachIndexed { index, entry ->
-                                PinnedRow(entry = entry)
-                                if (index < rows.lastIndex) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(vertical = 4.dp),
-                                        color = scheme.onSurface.copy(alpha = 0.06f),
-                                        thickness = 0.8.dp
-                                    )
+                }
+                LocateMatchEffect(
+                    listState = listState,
+                    token = locateToken,
+                    targetIndex = if (locatedGroup >= 0) locatedGroup * 2 else -1
+                )
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentPadding = PaddingValues(bottom = 28.dp)
+                ) {
+                    grouped.forEach { (category, rows) ->
+                        item(key = "header_${category.name}") {
+                            GlassSectionHeader(
+                                title = category.label.uppercase(Locale.US),
+                                icon = Icons.Default.Star,
+                                supporting = "${rows.size} pinned"
+                            )
+                        }
+                        item(key = "card_${category.name}") {
+                            GlassCard(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
+                                shape = RoundedCornerShape(18.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                frosted = false
+                            ) {
+                                rows.forEachIndexed { index, entry ->
+                                    PinnedRow(entry = entry)
+                                    if (index < rows.lastIndex) {
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(vertical = 4.dp),
+                                            color = scheme.onSurface.copy(alpha = 0.06f),
+                                            thickness = 0.8.dp
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                item(key = "dashboard_footer") {
-                    Text(
-                        text = "Values are re-read from their category on refresh — the same watchdogs as the rest of the app apply.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 14.dp)
-                    )
+                    item(key = "dashboard_footer") {
+                        Text(
+                            text = "Values are re-read from their category on refresh — the same watchdogs as the rest of the app apply.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = scheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 14.dp)
+                        )
+                    }
                 }
             }
         }
+
+        PullRefreshIndicator(
+            refreshing = loading,
+            state = pullState,
+            modifier = Modifier.align(Alignment.TopCenter),
+            backgroundColor = scheme.surface,
+            contentColor = scheme.primary
+        )
     }
 
     if (showClearDialog) {
@@ -302,6 +287,98 @@ fun DashboardScreen(
     }
 }
 
+/**
+ * Header. Split out so a refresh/loading change does not recompose the list, and
+ * so the icon-well style stays identical to every other screen header.
+ */
+@Composable
+private fun DashboardHeaderCard(
+    hasPins: Boolean,
+    matchCount: Int,
+    searchQuery: String,
+    loading: Boolean,
+    lastUpdated: String?,
+    onRefresh: () -> Unit,
+    onClearClick: () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    GlassCard(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(18.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+        frosted = false
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(scheme.primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = null,
+                    tint = scheme.primary,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Dashboard",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.onSurface
+                )
+                Text(
+                    text = when {
+                        !hasPins -> "Star any row to pin it here"
+                        matchCount == 0 -> "No pinned row matches \"$searchQuery\""
+                        loading -> "Resolving pinned values…"
+                        lastUpdated != null -> "$matchCount pinned • updated $lastUpdated"
+                        else -> "$matchCount pinned"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = scheme.primary,
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+            IconButton(
+                onClick = onRefresh,
+                enabled = matchCount > 0 && !loading
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Refresh pinned values",
+                    tint = scheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            IconButton(
+                onClick = onClearClick,
+                enabled = hasPins
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Unpin everything",
+                    tint = scheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun PinnedRow(entry: PinnedEntry) {
     val scheme = MaterialTheme.colorScheme
@@ -309,10 +386,18 @@ private fun PinnedRow(entry: PinnedEntry) {
     val value = item?.value
     val restricted = value == null || value.contains("Unavailable", ignoreCase = true)
 
+    // A committed search pulses the pinned row it located (and only that row).
+    val focus = LocalSearchFocus.current
+    val isMatch = focus.active &&
+        (focus.matches(entry.key.item) || focus.matches(entry.key.section) || focus.matches(entry.key.category.label))
+    val highlight = rememberMatchHighlight(active = isMatch, trigger = focus.token)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .clip(MatchHighlightShape)
+            .background(scheme.primary.copy(alpha = highlight))
+            .padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -365,12 +450,13 @@ private fun PinnedRow(entry: PinnedEntry) {
 @Composable
 private fun EmptyDashboard(modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
-    val metrics = rememberLiveMetrics()
+    val scrollState = rememberScrollState()
+    TrackScrollActivity(scrollState)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -408,8 +494,9 @@ private fun EmptyDashboard(modifier: Modifier = Modifier) {
             }
         }
 
-        // A useful glance even before anything is pinned; polls only while this
-        // screen is composed and the app is in the foreground.
+        // A useful glance even before anything is pinned. Each tile subscribes to
+        // exactly one field of the shared snapshot, so one poll repaints one
+        // small tile — never this screen.
         GlassCard(frosted = false) {
             Text(
                 text = "Live now",
@@ -422,48 +509,72 @@ private fun EmptyDashboard(modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val ramPercent = if (metrics.totalRamMb > 0) {
-                    metrics.usedRamMb * 100f / metrics.totalRamMb
-                } else {
-                    -1f
-                }
-                SnapshotTile(
-                    label = "BATTERY",
-                    value = if (metrics.batteryLevel >= 0) "${metrics.batteryLevel}%" else "—",
-                    caption = if (metrics.batteryLevel >= 0) {
-                        if (metrics.batteryCharging) "charging" else "discharging"
-                    } else {
-                        "no data"
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-                SnapshotTile(
-                    label = "CPU",
-                    value = if (metrics.cpuReadable) formatFrequency(metrics.latestAverageFreqMhz) else "—",
-                    caption = if (metrics.cpuReadable) "${metrics.coreCount} cores avg" else "needs elevation",
-                    modifier = Modifier.weight(1f)
-                )
-                SnapshotTile(
-                    label = "RAM",
-                    value = if (ramPercent >= 0f) String.format(Locale.US, "%.0f%%", ramPercent) else "—",
-                    caption = if (metrics.totalRamMb > 0) {
-                        "${(metrics.usedRamMb / 1024f).roundToInt()} / ${(metrics.totalRamMb / 1024f).roundToInt()} GB"
-                    } else {
-                        "no data"
-                    },
-                    modifier = Modifier.weight(1f)
-                )
+                BatterySnapshotTile(modifier = Modifier.weight(1f))
+                CpuSnapshotTile(modifier = Modifier.weight(1f))
+                RamSnapshotTile(modifier = Modifier.weight(1f))
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "1 s sampling • pauses in the background",
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant
-            )
+            LiveSamplingCaption()
         }
 
         Spacer(modifier = Modifier.height(10.dp))
     }
+}
+
+@Composable
+private fun LiveSamplingCaption() {
+    val label = rememberPollIntervalLabel()
+    Text(
+        text = "Shared ticker • every $label • pauses in the background",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun BatterySnapshotTile(modifier: Modifier = Modifier) {
+    val level = rememberLiveMetric { it.batteryLevel }
+    val charging = rememberLiveMetric { it.batteryCharging }
+    SnapshotTile(
+        label = "BATTERY",
+        value = if (level >= 0) "$level%" else "—",
+        caption = if (level >= 0) {
+            if (charging) "charging" else "discharging"
+        } else {
+            "no data"
+        },
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun CpuSnapshotTile(modifier: Modifier = Modifier) {
+    val readable = rememberLiveMetric { it.cpuReadable }
+    val average = rememberLiveMetric { it.latestAverageFreqMhz }
+    val coreCount = rememberLiveMetric { it.coreCount }
+    SnapshotTile(
+        label = "CPU",
+        value = if (readable) formatFrequency(average) else "—",
+        caption = if (readable) "$coreCount cores avg" else "needs elevation",
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun RamSnapshotTile(modifier: Modifier = Modifier) {
+    val usedMb = rememberLiveMetric { it.usedRamMb }
+    val totalMb = rememberLiveMetric { it.totalRamMb }
+    val percent = if (totalMb > 0) usedMb * 100f / totalMb else -1f
+    SnapshotTile(
+        label = "RAM",
+        value = if (percent >= 0f) String.format(Locale.US, "%.0f%%", percent) else "—",
+        caption = if (totalMb > 0) {
+            "${(usedMb / 1024f).roundToInt()} / ${(totalMb / 1024f).roundToInt()} GB"
+        } else {
+            "no data"
+        },
+        modifier = modifier
+    )
 }
 
 @Composable
@@ -502,11 +613,15 @@ private fun SnapshotTile(
             text = caption,
             style = MaterialTheme.typography.labelSmall,
             color = scheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
     }
 }
 
 private fun formatFrequency(mhz: Float): String =
-    if (mhz >= 1000f) String.format(Locale.US, "%.1f GHz", mhz / 1000f) else String.format(Locale.US, "%.0f MHz", mhz)
+    if (mhz >= 1000f) {
+        String.format(Locale.US, "%.1f GHz", mhz / 1000f)
+    } else {
+        String.format(Locale.US, "%.0f MHz", mhz)
+    }

@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.util.LruCache
+import androidx.core.graphics.drawable.toBitmap
 import com.icy.devcheckplus.model.InstalledAppItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,6 +16,9 @@ import java.util.Date
 import java.util.Locale
 
 object AppsDataProvider {
+
+    /** Rendered icon size; large enough to stay crisp on high-density screens. */
+    private const val ICON_SIZE_PX = 96
 
     suspend fun getInstalledApps(context: Context): List<InstalledAppItem> = withContext(Dispatchers.IO) {
         val pm = context.packageManager
@@ -66,6 +72,37 @@ object AppsDataProvider {
 
         appList.sortBy { it.appName.lowercase() }
         appList
+    }
+
+    /**
+     * Decoding an app icon is the single most expensive thing this screen can do
+     * (resource open + vector/raster render). It used to happen inside the item
+     * composable, on the main thread, for every visible row and again on every
+     * scroll back into view.
+     *
+     * Icons are now decoded lazily on [Dispatchers.IO] and kept in a small
+     * byte-bounded [LruCache], so a fling over the package list re-uses decoded
+     * bitmaps instead of re-decoding them, and the main thread never blocks.
+     */
+    private val iconCache = object : LruCache<String, Bitmap>(4 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+
+    /** Returns a cached (or freshly decoded) 96 dp icon for [packageName]. */
+    suspend fun loadAppIcon(context: Context, packageName: String): Bitmap? = withContext(Dispatchers.IO) {
+        iconCache.get(packageName)?.let { return@withContext it }
+        val drawable = try {
+            context.packageManager.getApplicationIcon(packageName)
+        } catch (_: Throwable) {
+            null
+        } ?: return@withContext null
+        val bitmap = try {
+            drawable.toBitmap(width = ICON_SIZE_PX, height = ICON_SIZE_PX, config = Bitmap.Config.ARGB_8888)
+        } catch (_: Throwable) {
+            null
+        } ?: return@withContext null
+        iconCache.put(packageName, bitmap)
+        bitmap
     }
 
     private fun formatFileSize(bytes: Long): String {

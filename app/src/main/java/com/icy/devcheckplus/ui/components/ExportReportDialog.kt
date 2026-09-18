@@ -20,8 +20,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.DeviceReport
 import com.icy.devcheckplus.data.ReportFormat
+import com.icy.devcheckplus.data.ReportSection
+import com.icy.devcheckplus.data.UserPreferencesStore
 import kotlinx.coroutines.launch
 
 /**
@@ -39,6 +42,9 @@ fun ExportReportDialog(onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf<ReportFormat?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // The report contains exactly the sections chosen in Settings › Export & Share.
+    val selectedSections by UserPreferencesStore.reportSections
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.reportSections.value)
 
     fun start(format: ReportFormat) {
         if (busy != null) return
@@ -46,7 +52,7 @@ fun ExportReportDialog(onDismiss: () -> Unit) {
         error = null
         scope.launch {
             val body = try {
-                DeviceReport.build(context, format)
+                DeviceReport.build(context, format, selectedSections)
             } catch (t: Throwable) {
                 null
             }
@@ -80,15 +86,18 @@ fun ExportReportDialog(onDismiss: () -> Unit) {
         text = {
             Column {
                 Text(
-                    text = "Collects every category — hardware, software, battery, storage, network, " +
-                        "processes, installed apps and sensors — then opens Android's share sheet.",
+                    text = "Collects the ${selectedSections.size} selected " +
+                        "${if (selectedSections.size == 1) "section" else "sections"} — " +
+                        selectedSections.sortedBy { it.ordinal }.joinToString(", ") { it.label } +
+                        " — then opens Android's share sheet.",
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = "App version and an export timestamp head the report. Each category is guarded by a " +
-                        "20 second watchdog, so a slow permission prompt can never hang the export.",
+                        "20 second watchdog, so a slow permission prompt can never hang the export. " +
+                        "Change the selection in Settings › What is included.",
                     style = MaterialTheme.typography.labelSmall,
                     color = scheme.onSurfaceVariant
                 )

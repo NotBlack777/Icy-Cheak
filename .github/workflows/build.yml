@@ -1,4 +1,4 @@
-name: Build DevCheck+ Debug APK
+name: Build Icy Cheak Debug APK
 
 on:
   push:
@@ -9,6 +9,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+
+# Required for the release step below: creating/updating a GitHub Release and
+# attaching the built APK needs `contents: write`. Everything else stays read-only.
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -33,12 +38,69 @@ jobs:
       - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
 
+      - name: Resolve version name
+        id: version
+        run: |
+          # Same derivation as app/build.gradle.kts: it reads GITHUB_RUN_NUMBER
+          # too, so the release tag can never drift from BuildConfig.VERSION_NAME
+          # (which is what the in-app updater compares against).
+          VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "resolved versionName=$VERSION_NAME (versionCode $((GITHUB_RUN_NUMBER + 1)))"
+
       - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+
+      - name: Publish compiler errors
+        if: failure()
+        run: |
+          if grep -qE "^e: " build.log; then
+            grep -E "^e: " build.log | head -80 | while IFS= read -r line; do
+              echo "::error title=Kotlin::$line"
+            done
+          else
+            tail -n 30 build.log | while IFS= read -r line; do
+              echo "::error title=Gradle::$line"
+            done
+          fi
+
+      - name: Rename APK for release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: apk
+        run: |
+          SRC=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
+          DEST="app/build/outputs/apk/debug/IcyCheak-${{ steps.version.outputs.version_name }}.apk"
+          cp "$SRC" "$DEST"
+          echo "apk_path=$DEST" >> "$GITHUB_OUTPUT"
+          echo "apk_name=IcyCheak-${{ steps.version.outputs.version_name }}.apk" >> "$GITHUB_OUTPUT"
+
+      # Publishes (or updates) the release the in-app updater reads from
+      # https://api.github.com/repos/NotBlack777/Icy-Cheak/releases/latest.
+      # Releases are used instead of artifacts: artifact downloads require
+      # authentication and expire, so they cannot back a public updater.
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version_name }}
+          name: Icy Cheak v${{ steps.version.outputs.version_name }}
+          body: |
+            Automated build of `Icy Cheak` from `main` (${{ github.sha }}).
+
+            **Install:** download `${{ steps.apk.outputs.apk_name }}` below and open it on your
+            device. Android will ask you to allow installing unknown apps — that is the normal
+            platform confirmation for any app installed outside a store.
+
+            **In-app updates:** open Settings › Updates › *Check for updates*, or wait for the
+            automatic check on launch.
+          files: ${{ steps.apk.outputs.apk_path }}
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DevCheckPlus-Debug-APK
+          name: IcyCheak-Debug-APK
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14

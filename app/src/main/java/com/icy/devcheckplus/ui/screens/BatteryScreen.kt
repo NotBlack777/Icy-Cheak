@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
@@ -27,20 +28,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.BatteryDataProvider
-import com.icy.devcheckplus.data.LiveMetrics
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.components.ChartSeries
+import com.icy.devcheckplus.ui.components.GlassEmptyState
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
 import com.icy.devcheckplus.ui.components.InfoSectionCard
 import com.icy.devcheckplus.ui.components.LiveChartCard
-import com.icy.devcheckplus.ui.components.rememberLiveMetrics
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.SkeletonChart
+import com.icy.devcheckplus.ui.components.SkeletonList
+import com.icy.devcheckplus.ui.components.locateSectionIndex
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.components.liveMetric
+import com.icy.devcheckplus.ui.components.rememberLiveMetric
+import com.icy.devcheckplus.ui.components.rememberLiveMetricsSnapshot
+import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
+import java.util.Locale
 import kotlin.math.abs
 
 @Composable
 fun BatteryScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -55,11 +66,15 @@ fun BatteryScreen(
     }
 
     val showCharts = searchQuery.isBlank()
-    val metrics = rememberLiveMetrics(enabled = showCharts)
+
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     if (loading) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        Column(modifier = modifier.fillMaxSize()) {
+            SkeletonChart()
+            SkeletonChart()
+            SkeletonList(count = 4)
         }
     } else {
         val filteredSections = remember(sections, searchQuery) {
@@ -79,28 +94,30 @@ fun BatteryScreen(
         }
 
         if (filteredSections.isEmpty() && !showCharts) {
-            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "No battery items match \"$searchQuery\"",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            GlassEmptyState(
+                icon = Icons.Default.SearchOff,
+                title = "Nothing matches \"$searchQuery\"",
+                message = "Battery rows are matched on their name and their value. Clear the " +
+                    "search to bring the live charts back."
+            )
         } else {
-            LazyColumn(modifier = modifier.fillMaxSize()) {
+            LocateMatchEffect(
+                listState = listState,
+                token = locateToken,
+                targetIndex = locateSectionIndex(filteredSections, searchQuery, headerCount = 0)
+            )
+            LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
                 if (showCharts) {
                     item(key = "battery_telemetry_header") {
-                        GlassSectionHeader(
-                            title = "LIVE TELEMETRY",
-                            icon = Icons.Default.Speed,
-                            supporting = if (metrics.batteryLevel >= 0) "${metrics.batteryLevel}% • ${if (metrics.batteryCharging) "charging" else "discharging"}" else "1 s sampling"
-                        )
+                        // Leaf-scoped read: only this header recomposes when the
+                        // level/charging flags change, not the whole screen.
+                        BatteryTelemetryHeader()
                     }
                     item(key = "battery_chart_temp") {
-                        TemperatureChart(metrics = metrics)
+                        TemperatureChart()
                     }
                     item(key = "battery_chart_drain") {
-                        DrainRateChart(metrics = metrics)
+                        DrainRateChart()
                     }
                     item(key = "battery_details_header") {
                         GlassSectionHeader(title = "DETAILS", icon = Icons.Default.BatteryChargingFull)
@@ -118,8 +135,30 @@ fun BatteryScreen(
 }
 
 @Composable
-private fun TemperatureChart(metrics: LiveMetrics) {
-    val samples = remember(metrics.batteryTempC) { metrics.batteryTempC.filter { it > 0f } }
+private fun BatteryTelemetryHeader() {
+    val level = rememberLiveMetric { it.batteryLevel }
+    val charging = rememberLiveMetric { it.batteryCharging }
+    val interval = rememberPollIntervalLabel()
+    GlassSectionHeader(
+        title = "LIVE TELEMETRY",
+        icon = Icons.Default.Speed,
+        supporting = if (level >= 0) {
+            "$level% • ${if (charging) "charging" else "discharging"} • every $interval"
+        } else {
+            "every $interval"
+        }
+    )
+}
+
+@Composable
+private fun TemperatureChart() {
+    val snapshot = rememberLiveMetricsSnapshot()
+    val tempC = snapshot.liveMetric { it.batteryTempC }
+    val temperatureReadable = snapshot.liveMetric { it.temperatureReadable }
+    val latestTempC = snapshot.liveMetric { it.latestTempC }
+    val version = snapshot.liveMetric { it.version }
+
+    val samples = remember(tempC) { tempC.filter { it > 0f } }
     val domain = remember(samples) {
         if (samples.size < 2) {
             0f to 0f
@@ -129,12 +168,12 @@ private fun TemperatureChart(metrics: LiveMetrics) {
             low to high
         }
     }
-    val series = remember(metrics.batteryTempC) {
+    val series = remember(tempC) {
         listOf(
             ChartSeries(
                 label = "Temperature",
                 color = AccentOrange,
-                points = metrics.batteryTempC,
+                points = tempC,
                 strokeWidthDp = 2.6f
             )
         )
@@ -144,24 +183,31 @@ private fun TemperatureChart(metrics: LiveMetrics) {
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
         title = "Battery temperature",
         icon = Icons.Default.DeviceThermostat,
-        subtitle = if (metrics.temperatureReadable) "Pack thermistor • live" else "Thermistor not reporting",
-        value = if (samples.isNotEmpty()) String.format("%.1f °C", metrics.latestTempC) else "—",
+        subtitle = if (temperatureReadable) "Pack thermistor • live" else "Thermistor not reporting",
+        value = if (samples.isNotEmpty()) String.format(Locale.US, "%.1f °C", latestTempC) else "—",
         valueColor = AccentOrange,
         series = series,
-        version = metrics.version,
+        version = version,
         areaSeriesIndex = 0,
         yMin = domain.first,
         yMax = domain.second,
-        topLabel = if (domain.second > domain.first) String.format("%.1f °C", domain.second) else null,
-        bottomLabel = if (domain.second > domain.first) String.format("%.1f °C", domain.first) else null,
+        topLabel = if (domain.second > domain.first) String.format(Locale.US, "%.1f °C", domain.second) else null,
+        bottomLabel = if (domain.second > domain.first) String.format(Locale.US, "%.1f °C", domain.first) else null,
         chartHeight = 116.dp
     )
 }
 
 @Composable
-private fun DrainRateChart(metrics: LiveMetrics) {
+private fun DrainRateChart() {
     val scheme = MaterialTheme.colorScheme
-    val samples = remember(metrics.batteryCurrentMa) { metrics.batteryCurrentMa.filter { abs(it) > 0.5f } }
+    val snapshot = rememberLiveMetricsSnapshot()
+
+    val currentMa = snapshot.liveMetric { it.batteryCurrentMa }
+    val currentReadable = snapshot.liveMetric { it.currentReadable }
+    val latestCurrentMa = snapshot.liveMetric { it.latestCurrentMa }
+    val version = snapshot.liveMetric { it.version }
+
+    val samples = remember(currentMa) { currentMa.filter { abs(it) > 0.5f } }
     val domain = remember(samples) {
         if (samples.size < 2) {
             0f to 0f
@@ -172,39 +218,37 @@ private fun DrainRateChart(metrics: LiveMetrics) {
             (low - pad) to (high + pad)
         }
     }
-    val charging = metrics.latestCurrentMa > 0f
+    val charging = latestCurrentMa > 0f
     val color = if (charging) AccentGreen else scheme.primary
-    val series = remember(metrics.batteryCurrentMa, color) {
+    val series = remember(currentMa, color) {
         listOf(
             ChartSeries(
                 label = "Current",
                 color = color,
-                points = metrics.batteryCurrentMa,
+                points = currentMa,
                 strokeWidthDp = 2.6f
             )
         )
     }
-
-    val latestMa = metrics.latestCurrentMa
 
     LiveChartCard(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
         title = "Charge / drain rate",
         icon = Icons.Default.Bolt,
         subtitle = when {
-            !metrics.currentReadable -> "Current sensor not reporting"
+            !currentReadable -> "Current sensor not reporting"
             charging -> "Charging — positive current"
             else -> "Discharging — negative current"
         },
-        value = if (samples.isNotEmpty()) String.format("%+.0f mA", latestMa) else "—",
+        value = if (samples.isNotEmpty()) String.format(Locale.US, "%+.0f mA", latestCurrentMa) else "—",
         valueColor = color,
         series = series,
-        version = metrics.version,
+        version = version,
         areaSeriesIndex = 0,
         yMin = domain.first,
         yMax = domain.second,
-        topLabel = if (domain.second > domain.first) String.format("%.0f mA", domain.second) else null,
-        bottomLabel = if (domain.second > domain.first) String.format("%.0f mA", domain.first) else null,
+        topLabel = if (domain.second > domain.first) String.format(Locale.US, "%.0f mA", domain.second) else null,
+        bottomLabel = if (domain.second > domain.first) String.format(Locale.US, "%.0f mA", domain.first) else null,
         chartHeight = 116.dp
     )
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,10 +25,17 @@ import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.NetworkDataProvider
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.components.InfoSectionCard
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SearchOff
+import com.icy.devcheckplus.ui.components.GlassEmptyState
+import com.icy.devcheckplus.ui.components.LocateMatchEffect
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
+import com.icy.devcheckplus.ui.components.locateSectionIndex
 
 @Composable
 fun NetworkScreen(
     searchQuery: String = "",
+    locateToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -41,6 +49,9 @@ fun NetworkScreen(
         sections = NetworkDataProvider.getNetworkSections(context, fetchPublicIp)
         loading = false
     }
+
+    val listState = rememberLazyListState()
+    TrackScrollActivity(listState)
 
     if (loading) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -62,19 +73,23 @@ fun NetworkScreen(
         }
 
         if (filteredSections.isEmpty()) {
-            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "No network items match \"$searchQuery\"",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            GlassEmptyState(
+                icon = Icons.Default.SearchOff,
+                title = "Nothing matches \"$searchQuery\"",
+                message = "Network entries are matched on their name and their value. Clear the " +
+                    "search to see the full list again."
+            )
         } else {
-            LazyColumn(modifier = modifier.fillMaxSize()) {
-                items(filteredSections) { sec ->
+            LocateMatchEffect(
+                listState = listState,
+                token = locateToken,
+                targetIndex = locateSectionIndex(filteredSections, searchQuery, headerCount = 0)
+            )
+            LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
+                items(filteredSections, key = { it.title }) { sec ->
                     InfoSectionCard(section = sec, category = PinnableCategory.NETWORK)
                 }
-                item {
+                item(key = "network_bottom_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }

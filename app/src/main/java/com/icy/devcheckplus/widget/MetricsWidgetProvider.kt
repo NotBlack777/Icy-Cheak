@@ -58,7 +58,7 @@ class MetricsWidgetProvider : AppWidgetProvider() {
 
         /**
          * Re-renders every placed instance. Called by the refresh alarm and from
-         * the app itself, so opening DevCheck+ also resynchronises the widget.
+         * the app itself, so opening Icy Cheak also resynchronises the widget.
          */
         fun refreshAll(context: Context) {
             try {

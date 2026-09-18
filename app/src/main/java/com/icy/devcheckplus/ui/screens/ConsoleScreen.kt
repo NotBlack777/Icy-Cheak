@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,6 +64,7 @@ import com.icy.devcheckplus.data.AppSettingsStore
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import com.icy.devcheckplus.ui.components.GlassCard
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -115,7 +119,10 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
     val tick = rememberHapticTick()
 
     var command by remember { mutableStateOf("") }
-    var lines by remember { mutableStateOf(listOf<ConsoleLine>()) }
+    // Snapshot-backed ring buffer: appending N lines used to rebuild the whole
+    // list N times (O(n^2) copies plus one recomposition per line). Now a batch
+    // of output is appended once and only the affected lazy items re-run.
+    val lines = remember { mutableStateListOf<ConsoleLine>() }
     var running by remember { mutableStateOf(false) }
     var job by remember { mutableStateOf<Job?>(null) }
     var nextId by remember { mutableStateOf(0) }
@@ -131,20 +138,24 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
     }
 
     val outputState = rememberLazyListState()
-    LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) {
-            val nearBottom = outputState.firstVisibleItemIndex >= lines.size - 8
-            if (nearBottom || running) {
-                outputState.scrollToItem(lines.lastIndex)
-            }
+    TrackScrollActivity(outputState)
+
+    fun appendBatch(newLines: List<Pair<LineKind, String>>) {
+        if (newLines.isEmpty()) return
+        val batch = ArrayList<ConsoleLine>(newLines.size)
+        newLines.forEach { (kind, text) ->
+            batch.add(ConsoleLine(nextId, kind, text))
+            nextId += 1
+        }
+        lines.addAll(batch)
+        val excess = lines.size - MAX_OUTPUT_LINES
+        if (excess > 0) {
+            // Drop oldest lines in one shot instead of once per line.
+            lines.removeRange(0, excess)
         }
     }
 
-    fun append(kind: LineKind, text: String) {
-        val id = nextId
-        nextId = id + 1
-        lines = (lines + ConsoleLine(id, kind, text)).takeLast(MAX_OUTPUT_LINES)
-    }
+    fun append(kind: LineKind, text: String) = appendBatch(listOf(kind to text))
 
     fun recall(delta: Int) {
         if (history.isEmpty()) return
@@ -177,20 +188,24 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
                 return@launch
             }
 
+            // One batch per command: a 1500-line dump costs a single list
+            // mutation and a single recomposition instead of 1500 of each.
+            val batch = ArrayList<Pair<LineKind, String>>(result.stdout.size + result.stderr.size + 2)
             if (result.timedOut) {
-                append(
-                    LineKind.ERROR,
-                    "Command timed out after ${COMMAND_TIMEOUT_MS / 1000} s — it may still be running in the shell, " +
-                        "but the UI has been released."
+                batch.add(
+                    LineKind.ERROR to
+                        ("Command timed out after ${COMMAND_TIMEOUT_MS / 1000} s — it may still be running in the shell, " +
+                            "but the UI has been released.")
                 )
             } else {
-                append(LineKind.INFO, "[${result.executionSource}] exit=${result.exitCode}")
-                result.stdout.forEach { append(LineKind.OUT, it) }
-                result.stderr.forEach { append(LineKind.ERR, it) }
+                batch.add(LineKind.INFO to "[${result.executionSource}] exit=${result.exitCode}")
+                result.stdout.forEach { batch.add(LineKind.OUT to it) }
+                result.stderr.forEach { batch.add(LineKind.ERR to it) }
                 if (result.stdout.isEmpty() && result.stderr.isEmpty()) {
-                    append(LineKind.INFO, "(no output)")
+                    batch.add(LineKind.INFO to "(no output)")
                 }
             }
+            appendBatch(batch)
             running = false
             job = null
         }
@@ -266,7 +281,9 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .height(54.dp),
+                        // heightIn, not height: at 130 %+ font scale the field grows
+                        // with its text instead of clipping it.
+                        .heightIn(min = 54.dp),
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     placeholder = {
@@ -343,7 +360,7 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = { lines = emptyList() }, enabled = lines.isNotEmpty()) {
+                IconButton(onClick = { lines.clear() }, enabled = lines.isNotEmpty()) {
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Clear output",
@@ -359,6 +376,7 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
         OutputPane(
             lines = lines,
             state = outputState,
+            autoScroll = running,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -376,6 +394,7 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
                 FilterChip(
                     selected = false,
                     onClick = { tick(); command = quick },
+                    modifier = Modifier.heightIn(min = 48.dp),
                     label = {
                         Text(
                             text = quick,
@@ -390,16 +409,17 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
 
         if (history.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+            // Lazy row with a stable key per command: recalling a command used to
+            // recompose every chip in this history strip.
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                history.forEach { previous ->
+                items(items = history, key = { it }) { previous ->
                     FilterChip(
                         selected = previous == command,
                         onClick = { tick(); command = previous },
+                        modifier = Modifier.heightIn(min = 48.dp),
                         label = {
                             Text(
                                 text = previous,
@@ -482,8 +502,19 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
 private fun OutputPane(
     lines: List<ConsoleLine>,
     state: androidx.compose.foundation.lazy.LazyListState,
+    autoScroll: Boolean,
     modifier: Modifier = Modifier
 ) {
+    // Auto-follow lives here, not in the screen: the size read only invalidates
+    // this pane, and it scrolls only when the user is already near the bottom.
+    LaunchedEffect(lines.size, autoScroll) {
+        if (lines.isNotEmpty()) {
+            val nearBottom = state.firstVisibleItemIndex >= lines.size - 8
+            if (nearBottom || autoScroll) {
+                state.scrollToItem(lines.lastIndex)
+            }
+        }
+    }
     LazyColumn(
         state = state,
         modifier = modifier

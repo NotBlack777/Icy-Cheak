@@ -124,10 +124,19 @@ fun InfoRowItem(
     category: PinnableCategory? = null,
     sectionTitle: String? = null
 ) {
+    // Search targeting: when the user commits a search, only the matching row
+    // animates (a single Animatable that then stops reading), and the highlight is
+    // painted behind the row's own padding so nothing shifts.
+    val focus = LocalSearchFocus.current
+    val isMatch = focus.active && (focus.matches(item.title) || focus.matches(item.value) || focus.matches(item.subtitle))
+    val highlight = rememberMatchHighlight(active = isMatch, trigger = focus.token)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .clip(MatchHighlightShape)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = highlight))
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {

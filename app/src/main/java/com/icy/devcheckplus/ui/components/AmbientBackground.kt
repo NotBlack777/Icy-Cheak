@@ -1,86 +1,79 @@
 package com.icy.devcheckplus.ui.components
 
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.icy.devcheckplus.data.BackgroundAnimation
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
+import com.icy.devcheckplus.ui.theme.ambientBrush
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.random.Random
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /**
  * Ambient animated background.
  *
- * A single full-screen [Canvas] painted *behind* the content: three slow
- * gradient blobs drifting on 20-34 s cycles plus a handful of floating
- * particles. Deliberately cheap:
+ * What actually cost frames before, and what changed:
  *
- *  - the animated values are read **inside the draw scope**, so each frame only
- *    invalidates drawing for this node — no recomposition of the screen tree;
- *  - long tween durations (never sub-frame loops) driven by
- *    [rememberInfiniteTransition];
- *  - particle seeds are computed once with a fixed RNG;
- *  - it stops entirely when the host is not foregrounded, and in OLED mode it is
- *    replaced by a static gradient (no infinite transition is even created, so
- *    there is zero per-frame work and no extra overdraw).
+ *  1. **It ran on the vsync clock, forever.** Three `rememberInfiniteTransition`
+ *     tweeners invalidated this full-screen node 60-120 times a second whenever
+ *     the app was in the foreground — even while the list on top was being
+ *     flung. It is now driven by a single ~30 Hz phase clock, so the ambient
+ *     layer costs at most half the frames, and it *stops completely* while any
+ *     tracked list is scrolling (see [LocalScrollActivity]) and while the app is
+ *     not foregrounded.
+ *  2. **It repainted the whole screen every frame** (base gradient + three
+ *     radial blobs + particles). The static base gradient is now a plain
+ *     `Modifier.background` on a layer *below* the canvas, so each animated
+ *     frame only fills the blob/particle geometry on top of it.
+ *  3. **OLED mode still allocated the animation machinery.** Nothing is
+ *     created for the static path — it is a single background brush, no clock,
+ *     no draw callbacks.
+ *
+ * The phase value is read inside the draw scope, so a tick only invalidates
+ * drawing for this node: no recomposition of any screen.
  */
 @Composable
 fun AmbientBackground(modifier: Modifier = Modifier) {
     val spec = LocalGlassSpec.current
     val scheme = MaterialTheme.colorScheme
     val foreground = rememberIsForeground()
+    val scrolling = LocalScrollActivity.current.value
 
-    val baseBrush = remember(scheme.background, scheme.surfaceVariant, spec.isOled) {
-        Brush.verticalGradient(
-            listOf(
-                scheme.background,
-                scheme.surfaceVariant.copy(alpha = if (spec.isOled) 0.10f else 0.28f),
-                scheme.background
-            )
-        )
+    // The static layer: painted once, never part of an animated frame. It follows
+    // the user's gradient style, so "Solid" also flattens the backdrop.
+    val baseBrush = remember(scheme, spec.gradientStyle, spec.isOled) {
+        spec.gradientStyle.ambientBrush(scheme, spec.isOled)
     }
 
-    if (!spec.ambientAnimation || !foreground) {
-        // Static fallback: one gradient, drawn once, no animation clock.
+    val style = spec.ambientStyle
+    val animating = style != BackgroundAnimation.NONE &&
+        spec.ambientIntensity > 0.001f &&
+        foreground &&
+        !scrolling
+
+    if (!animating) {
         Box(modifier = modifier.fillMaxSize().background(baseBrush))
         return
     }
 
-    val transition = rememberInfiniteTransition(label = "ambientBackground")
-    val driftA = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(26_000, easing = LinearEasing), RepeatMode.Reverse),
-        label = "driftA"
-    )
-    val driftB = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(34_000, easing = LinearEasing), RepeatMode.Reverse),
-        label = "driftB"
-    )
-    val driftC = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(20_000, easing = LinearEasing), RepeatMode.Reverse),
-        label = "driftC"
-    )
+    val phase = rememberAmbientPhase()
 
     val particles = remember(spec.particleCount) { buildParticles(spec.particleCount) }
     val intensity = spec.ambientIntensity
@@ -88,70 +81,98 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
     val secondary = scheme.secondary
     val tertiary = scheme.tertiary
 
-    Canvas(modifier = modifier.fillMaxSize()) {
-        val w = size.width
-        val h = size.height
-        if (w <= 0f || h <= 0f) return@Canvas
+    Box(modifier = modifier.fillMaxSize().background(baseBrush)) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            if (w <= 0f || h <= 0f) return@Canvas
 
-        // Values are read here (draw phase) — never in composition.
-        val a = driftA.value
-        val b = driftB.value
-        val c = driftC.value
+            // Read in the draw phase — never in composition.
+            val t = phase.value
 
-        drawRect(brush = baseBrush)
+            // One clock, three drifting frequencies.
+            val swingA = sin(t * 2f * PI.toFloat())
+            val swingB = sin(t * 2f * PI.toFloat() * 0.63f + 1.1f)
+            val swingC = sin(t * 2f * PI.toFloat() * 1.37f + 2.3f)
 
-        drawBlob(
-            color = primary,
-            alpha = 0.17f * intensity,
-            phase = a,
-            anchorX = 0.16f,
-            anchorY = 0.12f,
-            travelX = 0.12f,
-            travelY = 0.07f,
-            radiusFactor = 0.85f
-        )
-        drawBlob(
-            color = tertiary,
-            alpha = 0.13f * intensity,
-            phase = b,
-            anchorX = 0.86f,
-            anchorY = 0.42f,
-            travelX = -0.10f,
-            travelY = 0.12f,
-            radiusFactor = 0.72f
-        )
-        drawBlob(
-            color = secondary,
-            alpha = 0.11f * intensity,
-            phase = c,
-            anchorX = 0.34f,
-            anchorY = 0.88f,
-            travelX = 0.14f,
-            travelY = -0.06f,
-            radiusFactor = 0.62f
-        )
+            drawBlob(
+                color = primary,
+                alpha = 0.17f * intensity,
+                swing = swingA,
+                anchorX = 0.16f,
+                anchorY = 0.12f,
+                travelX = 0.12f,
+                travelY = 0.07f,
+                radiusFactor = 0.85f
+            )
+            drawBlob(
+                color = tertiary,
+                alpha = 0.13f * intensity,
+                swing = swingB,
+                anchorX = 0.86f,
+                anchorY = 0.42f,
+                travelX = -0.10f,
+                travelY = 0.12f,
+                radiusFactor = 0.72f
+            )
+            drawBlob(
+                color = secondary,
+                alpha = 0.11f * intensity,
+                swing = swingC,
+                anchorX = 0.34f,
+                anchorY = 0.88f,
+                travelX = 0.14f,
+                travelY = -0.06f,
+                radiusFactor = 0.62f
+            )
 
-        if (particles.isNotEmpty()) {
-            particles.forEach { p ->
-                val progress = (p.startY + a * p.speed) % 1f
-                val y = h * (1f - progress)
-                val x = w * (p.startX + (sin((progress + p.wobble) * 2f * PI.toFloat()) * 0.02f))
-                val twinkle = 0.5f + 0.5f * sin((c + p.wobble) * 2f * PI.toFloat())
-                drawCircle(
-                    color = p.tint(primary, secondary, tertiary),
-                    radius = p.radius * density,
-                    center = Offset(x, y),
-                    alpha = p.alpha * twinkle * intensity
-                )
+            if (style == BackgroundAnimation.PARTICLES && particles.isNotEmpty()) {
+                particles.forEach { p ->
+                    val progress = (p.startY + t * p.speed) % 1f
+                    val y = h * (1f - progress)
+                    val x = w * (p.startX + (sin((progress + p.wobble) * 2f * PI.toFloat()) * 0.02f))
+                    val twinkle = 0.5f + 0.5f * sin((t * 3f + p.wobble) * 2f * PI.toFloat())
+                    drawCircle(
+                        color = p.tint(primary, secondary, tertiary),
+                        radius = p.radius * density,
+                        center = Offset(x, y),
+                        alpha = p.alpha * twinkle * intensity
+                    )
+                }
             }
         }
     }
 }
 
+/** One full drift cycle. Longer = calmer. */
+private const val AMBIENT_CYCLE_MS = 26_000L
+
+/** ~30 fps: smooth enough for slow drifting gradients, half the frame cost of vsync. */
+private const val AMBIENT_FRAME_MS = 33L
+
+/**
+ * A single monotonic 0..1 phase, advanced off the composition and written into a
+ * `mutableFloatStateOf`. The state is only read inside the draw scope, so a tick
+ * costs one draw invalidation and nothing else. Cancelling the effect (background,
+ * scroll, OLED) stops the clock completely.
+ */
+@Composable
+private fun rememberAmbientPhase(): State<Float> {
+    val phase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        val start = SystemClock.elapsedRealtime()
+        while (isActive) {
+            phase.floatValue = ((SystemClock.elapsedRealtime() - start) % AMBIENT_CYCLE_MS) / AMBIENT_CYCLE_MS.toFloat()
+            delay(AMBIENT_FRAME_MS)
+        }
+    }
+    return phase
+}
+
 private fun DrawScope.drawBlob(
     color: Color,
     alpha: Float,
-    phase: Float,
+    swing: Float,
     anchorX: Float,
     anchorY: Float,
     travelX: Float,
@@ -161,7 +182,6 @@ private fun DrawScope.drawBlob(
     if (alpha <= 0.001f) return
     val w = size.width
     val h = size.height
-    val swing = sin(phase * 2f * PI.toFloat())
     val cx = (anchorX + travelX * swing) * w
     val cy = (anchorY + travelY * swing) * h
     val radius = w * radiusFactor * (0.92f + 0.08f * abs(swing))
