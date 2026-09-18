@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
+import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import kotlinx.coroutines.launch
@@ -61,12 +62,17 @@ fun OnboardingScreen(
     val privilegeStatus by PrivilegeManager.status.collectAsState()
     var selectedChoice by remember { mutableStateOf(PrivilegeMode.AUTO) }
 
+    // The wizard scrolls too, so it reports scroll activity like every other
+    // scrollable surface: its glass cards flatten while it is being flicked.
+    val scrollState = rememberScrollState()
+    TrackScrollActivity(scrollState)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(24.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(scrollState),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         Column {

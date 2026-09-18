@@ -55,28 +55,35 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val foreground = rememberIsForeground()
     val scrolling = LocalScrollActivity.current.value
+    // Quantised on purpose: this is a full-screen canvas, so the fade back in
+    // costs four repaints instead of one per animation frame.
+    val fidelity = rememberGlassFidelityStep()
 
     // The static layer: painted once, never part of an animated frame. It follows
-    // the user's gradient style, so "Solid" also flattens the backdrop.
+    // the user's gradient style, so "Solid" also flattens the backdrop. It is
+    // deliberately *not* faded with the scroll fidelity — repainting the whole
+    // screen per frame to remove a static wash would cost more than it saves.
     val baseBrush = remember(scheme, spec.gradientStyle, spec.isOled) {
         spec.gradientStyle.ambientBrush(scheme, spec.isOled)
     }
 
     val style = spec.ambientStyle
-    val animating = style != BackgroundAnimation.NONE &&
+    val wanted = style != BackgroundAnimation.NONE &&
         spec.ambientIntensity > 0.001f &&
-        foreground &&
-        !scrolling
+        foreground
 
-    if (!animating) {
+    // Once the fade has run out (mid-fling) the canvas is dropped altogether: no
+    // draw callback, no clock. While it fades the blobs are drawn at reduced alpha,
+    // so pausing during a scroll no longer makes the background blink out.
+    if (!wanted || fidelity <= 0.01f) {
         Box(modifier = modifier.fillMaxSize().background(baseBrush))
         return
     }
 
-    val phase = rememberAmbientPhase()
+    val phase = rememberAmbientPhase(running = !scrolling)
 
     val particles = remember(spec.particleCount) { buildParticles(spec.particleCount) }
-    val intensity = spec.ambientIntensity
+    val intensity = spec.ambientIntensity * fidelity
     val primary = scheme.primary
     val secondary = scheme.secondary
     val tertiary = scheme.tertiary
@@ -151,19 +158,43 @@ private const val AMBIENT_CYCLE_MS = 26_000L
 private const val AMBIENT_FRAME_MS = 33L
 
 /**
+ * Drift clock, accumulated in *process* scope rather than per composition.
+ *
+ * The previous implementation restarted its clock from zero every time the effect
+ * was recreated, and the effect is recreated on every pause/resume (scroll start,
+ * scroll settle, backgrounding, tab switch) — so the blobs visibly jumped back to
+ * their starting position each time the user lifted a finger. Accumulating only
+ * while the clock runs makes a resume seamless: the drift continues exactly where
+ * it stopped, on every screen.
+ */
+private object AmbientClock {
+    var elapsedMs: Long = 0L
+
+    fun advance(nowMs: Long, lastMs: Long): Float {
+        elapsedMs += (nowMs - lastMs).coerceAtLeast(0L)
+        return (elapsedMs % AMBIENT_CYCLE_MS) / AMBIENT_CYCLE_MS.toFloat()
+    }
+
+    fun phase(): Float = (elapsedMs % AMBIENT_CYCLE_MS) / AMBIENT_CYCLE_MS.toFloat()
+}
+
+/**
  * A single monotonic 0..1 phase, advanced off the composition and written into a
  * `mutableFloatStateOf`. The state is only read inside the draw scope, so a tick
- * costs one draw invalidation and nothing else. Cancelling the effect (background,
- * scroll, OLED) stops the clock completely.
+ * costs one draw invalidation and nothing else. With [running] false the effect
+ * stops ticking but the phase survives, so resuming continues instead of jumping.
  */
 @Composable
-private fun rememberAmbientPhase(): State<Float> {
-    val phase = remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(Unit) {
-        val start = SystemClock.elapsedRealtime()
+private fun rememberAmbientPhase(running: Boolean): State<Float> {
+    val phase = remember { mutableFloatStateOf(AmbientClock.phase()) }
+    LaunchedEffect(running) {
+        if (!running) return@LaunchedEffect
+        var last = SystemClock.elapsedRealtime()
         while (isActive) {
-            phase.floatValue = ((SystemClock.elapsedRealtime() - start) % AMBIENT_CYCLE_MS) / AMBIENT_CYCLE_MS.toFloat()
             delay(AMBIENT_FRAME_MS)
+            val now = SystemClock.elapsedRealtime()
+            phase.floatValue = AmbientClock.advance(now, last)
+            last = now
         }
     }
     return phase

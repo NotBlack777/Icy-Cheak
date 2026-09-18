@@ -68,14 +68,12 @@ fun GlassCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val spec = LocalGlassSpec.current
-    val scheme = MaterialTheme.colorScheme
 
-    // Read in this small scope (the card itself, not the screen): scrolling
-    // start/stop is the only thing that invalidates it, and the content lambda
-    // below is skipped because its parameters did not change. During a fling the
-    // per-card offscreen layers (elevation shadow + blur) are simply not
-    // requested, which is what removes the frame drops on long lists; they come
-    // back the moment the finger lifts.
+    // Only the *binary* decisions live in this scope: while a list is being flung
+    // the card requests no elevation shadow at all (another offscreen layer per
+    // card) and no frosted layer. The gradient cross-fade is animated inside
+    // GlassSurfaceLayer below, so this body — and the card's content lambda, which
+    // Compose skips anyway — does not recompose on every frame of that fade.
     val scrolling = LocalScrollActivity.current.value
     val elevation = if (scrolling) 0.dp else spec.cardElevation
 
@@ -90,32 +88,18 @@ fun GlassCard(
             )
             .clip(shape)
     ) {
-        if (frosted) {
-            FrostedLayer(
-                shape = shape,
-                radius = if (scrolling) 0.dp else spec.cardBlurRadius,
-                primary = scheme.primary,
-                tertiary = scheme.tertiary,
-                modifier = Modifier.matchParentSize()
-            )
-        }
-        // Semi-transparent surface tint (the "glass" body), painted with the
-        // user's gradient style — Solid paints a flat colour instead.
-        val surfaceBrush = remember(scheme, spec.cardAlpha, spec.gradientStyle) {
-            spec.gradientStyle.surfaceBrush(scheme, spec.cardAlpha)
-        }
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .then(
-                    if (surfaceBrush != null) {
-                        Modifier.background(surfaceBrush)
-                    } else {
-                        Modifier.background(spec.gradientStyle.solidSurface(scheme, spec.cardAlpha))
-                    }
-                )
+        GlassSurfaceLayer(
+            shape = shape,
+            surfaceAlpha = spec.cardAlpha,
+            blurRadius = spec.cardBlurRadius,
+            borderAlpha = spec.borderAlpha,
+            sheenAlpha = spec.sheenAlpha,
+            frosted = frosted,
+            frostPrimary = MaterialTheme.colorScheme.primary,
+            frostSecondary = MaterialTheme.colorScheme.tertiary,
+            bottomHairline = false,
+            modifier = Modifier.matchParentSize()
         )
-        GlassEdges(shape = shape, borderAlpha = spec.borderAlpha, sheenAlpha = spec.sheenAlpha, modifier = Modifier.matchParentSize())
 
         Column(
             modifier = Modifier
@@ -137,61 +121,128 @@ fun GlassTopBar(
 ) {
     val spec = LocalGlassSpec.current
     val scheme = MaterialTheme.colorScheme
-    // Same rule as cards: no offscreen blur layer while the content below scrolls.
-    val scrolling = LocalScrollActivity.current.value
 
     Box(modifier = modifier.clip(shape)) {
-        FrostedLayer(
+        GlassSurfaceLayer(
             shape = shape,
-            radius = if (scrolling) 0.dp else spec.barBlurRadius,
-            primary = scheme.primary,
-            tertiary = scheme.secondary,
+            surfaceAlpha = spec.barAlpha,
+            blurRadius = spec.barBlurRadius,
+            borderAlpha = spec.borderAlpha,
+            sheenAlpha = 0f,
+            frosted = true,
+            frostPrimary = scheme.primary,
+            frostSecondary = scheme.secondary,
+            bottomHairline = true,
             modifier = Modifier.matchParentSize()
-        )
-        val barBrush = remember(scheme, spec.barAlpha, spec.gradientStyle) {
-            spec.gradientStyle.surfaceBrush(scheme, spec.barAlpha)
-        }
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .then(
-                    if (barBrush != null) {
-                        Modifier.background(barBrush)
-                    } else {
-                        Modifier.background(spec.gradientStyle.solidSurface(scheme, spec.barAlpha))
-                    }
-                )
-        )
-        // Hairline at the bottom edge only.
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.86f to Color.Transparent,
-                        1f to scheme.onSurface.copy(alpha = spec.borderAlpha * 0.45f)
-                    )
-                )
         )
         Column(modifier = Modifier.fillMaxWidth(), content = content)
     }
 }
 
 /**
+ * Everything that *paints* a glass surface: the blurred decoration layer, the
+ * gradient-or-flat body, the hairline edge, the sheen and (for the app bar) the
+ * bottom hairline.
+ *
+ * Split out from [GlassCard] and [GlassTopBar] for one reason: this is the node
+ * that reads [rememberGlassFidelity], so the scroll cross-fade invalidates a
+ * single background box instead of the card body, its content lambda and the
+ * screen around it.
+ *
+ * Fidelity rules, in the order they cost something:
+ *  - `0f` (fling in progress): one flat `scheme.surface` colour. No gradient
+ *    shader, no blur layer, no sheen — the cheapest possible surface, and
+ *    [surfaceBrush] returns `null` so not even a degenerate brush is built;
+ *  - `0f → 1f` (list settling): every gradient stop is lerped from the flat
+ *    colour back to its real one over ~320 ms, so the glass fades in instead of
+ *    popping. The blur radius is *not* animated with it — re-creating a
+ *    RenderEffect per frame is far more expensive than the fade is worth — so
+ *    blur is simply requested once settled and its own colours ride the fade;
+ *  - `1f` (at rest): the full liquid-glass treatment.
+ */
+@Composable
+private fun BoxScope.GlassSurfaceLayer(
+    shape: Shape,
+    surfaceAlpha: Float,
+    blurRadius: Dp,
+    borderAlpha: Float,
+    sheenAlpha: Float,
+    frosted: Boolean,
+    frostPrimary: Color,
+    frostSecondary: Color,
+    bottomHairline: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val spec = LocalGlassSpec.current
+    val scheme = MaterialTheme.colorScheme
+    val scrolling = LocalScrollActivity.current.value
+    val fidelity = rememberGlassFidelity()
+
+    if (frosted && !scrolling && fidelity > 0.01f) {
+        FrostedLayer(
+            shape = shape,
+            radius = blurRadius,
+            fidelity = fidelity,
+            primary = frostPrimary,
+            secondary = frostSecondary,
+            modifier = modifier
+        )
+    }
+
+    // Semi-transparent surface tint (the "glass" body), painted with the user's
+    // gradient style at the current fidelity — Solid, and a flattened surface,
+    // paint a flat colour instead.
+    val surfaceBrush = remember(spec.gradientStyle, scheme, surfaceAlpha, fidelity) {
+        spec.gradientStyle.surfaceBrush(scheme, surfaceAlpha, fidelity)
+    }
+    Box(
+        modifier = modifier
+            .then(
+                if (surfaceBrush != null) {
+                    Modifier.background(surfaceBrush)
+                } else {
+                    Modifier.background(spec.gradientStyle.solidSurface(scheme, surfaceAlpha))
+                }
+            )
+    )
+
+    GlassEdges(
+        shape = shape,
+        borderAlpha = borderAlpha,
+        sheenAlpha = sheenAlpha * fidelity,
+        modifier = modifier
+    )
+
+    if (bottomHairline) {
+        Box(
+            modifier = modifier.background(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    0.86f to Color.Transparent,
+                    1f to scheme.onSurface.copy(alpha = borderAlpha * 0.45f * fidelity)
+                )
+            )
+        )
+    }
+}
+
+/**
  * Blurred decorative layer. Below API 31 [Modifier.blur] cannot run on a
  * hardware canvas, so the whole layer is skipped and the solid tint above acts
- * as the fallback.
+ * as the fallback. [fidelity] scales the two tints, which is what makes the frost
+ * fade in with the gradient instead of appearing in one frame.
  */
 @Composable
 private fun FrostedLayer(
     shape: Shape,
     radius: Dp,
+    fidelity: Float,
     primary: Color,
-    tertiary: Color,
+    secondary: Color,
     modifier: Modifier = Modifier
 ) {
     if (radius <= 0.dp) return
+    if (fidelity <= 0.01f) return
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
 
     Box(
@@ -203,9 +254,9 @@ private fun FrostedLayer(
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            primary.copy(alpha = 0.20f),
+                            primary.copy(alpha = 0.20f * fidelity),
                             Color.Transparent,
-                            tertiary.copy(alpha = 0.14f)
+                            secondary.copy(alpha = 0.14f * fidelity)
                         ),
                         start = Offset.Zero,
                         end = Offset.Infinite

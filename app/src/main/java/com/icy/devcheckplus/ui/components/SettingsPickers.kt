@@ -115,6 +115,10 @@ fun PickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scheme = MaterialTheme.colorScheme
+    // The sheet's own scroll counts as scroll activity: the glass inside a sheet
+    // flattens while it is being flicked exactly like a screen's cards do.
+    val scrollState = rememberScrollState()
+    TrackScrollActivity(scrollState)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -124,7 +128,7 @@ fun PickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
         ) {
             Text(

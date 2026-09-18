@@ -43,6 +43,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -84,6 +85,11 @@ fun SelectableTile(
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
     val tileTick = rememberHapticTick()
+    // Tiles are numerous and cheap, so they observe the *quantised* glass fidelity:
+    // a tile grid recomposes four times while a list settles instead of once per
+    // animation frame, and still visibly fades between the flat scroll fallback and
+    // the full gradient treatment.
+    val fidelity = rememberGlassFidelityStep()
 
     val borderColor by animateColorAsState(
         targetValue = when {
@@ -119,6 +125,25 @@ fun SelectableTile(
         label = "tileLabelColor"
     )
 
+    // Flat while scrolling, gradient at rest — the same cross-fade the cards use.
+    val flatTint = scheme.surface.copy(alpha = (spec.cardAlpha * 0.75f).coerceIn(0f, 1f))
+    val tileBrush = remember(containerTint, scheme, spec.cardAlpha, fidelity) {
+        if (fidelity <= 0.01f) {
+            Brush.verticalGradient(listOf(flatTint, flatTint))
+        } else {
+            Brush.verticalGradient(
+                listOf(
+                    lerp(flatTint, containerTint, fidelity),
+                    lerp(
+                        flatTint,
+                        scheme.surface.copy(alpha = (spec.cardAlpha * 0.5f).coerceIn(0f, 1f)),
+                        fidelity
+                    )
+                )
+            )
+        }
+    }
+
     val description = "$label${supporting?.let { ", $it" } ?: ""}${if (selected) ", selected" else ""}"
     // Captured under a distinct name so the semantics assignment below can never
     // resolve back onto the receiver's own `selected` property.
@@ -126,22 +151,17 @@ fun SelectableTile(
 
     Box(
         modifier = modifier
+            // No selection glow shadow while the list is flinging: it is another
+            // offscreen layer per tile, and fidelity is already 0 by then.
             .shadow(
-                elevation = 10.dp * glow,
+                elevation = 10.dp * glow * fidelity,
                 shape = shape,
                 clip = false,
                 ambientColor = scheme.primary,
                 spotColor = scheme.primary
             )
             .clip(shape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        containerTint,
-                        scheme.surface.copy(alpha = (spec.cardAlpha * 0.5f).coerceIn(0f, 1f))
-                    )
-                )
-            )
+            .background(tileBrush)
             .border(width = borderWidth, color = borderColor, shape = shape)
             .clickable(enabled = enabled, onClick = { tileTick(); onClick() })
             .semantics(mergeDescendants = true) {
