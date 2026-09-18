@@ -9,19 +9,8 @@ import com.icy.devcheckplus.privilege.ShellExecutionResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * Privileged app-management actions shared by the Installed Apps screen and the
- * Settings quick actions: force-stop and uninstall, each with the same watchdog
- * discipline as every other root/Shizuku call in the app.
- *
- * Failure is a value, never a crash: permission revocations mid-action, protected
- * system packages and hung shells all come back as [AppActionResult.Failure]
- * with a human-readable message. The actions never touch the UI thread, and each
- * privileged call is bounded by [ACTION_TIMEOUT_MS].
- */
 object AppManagementController {
 
-    /** One action privileges the shell for at most this long. */
     private const val ACTION_TIMEOUT_MS = 15_000L
 
     sealed interface AppActionResult {
@@ -29,20 +18,18 @@ object AppManagementController {
         data class Failure(val message: String) : AppActionResult
     }
 
-    /** True when a privileged (root / Shizuku) shell is currently active. */
     private fun hasElevation(): Boolean {
         val mode = PrivilegeManager.status.value.activeMode
         return mode == PrivilegeMode.ROOT || mode == PrivilegeMode.SHIZUKU
     }
 
-    /** Shell `exec` result lines (stdout then stderr) collapsed into one string. */
     private fun ShellExecutionResult.combined(): String =
         (stdout + stderr).map { it.trim() }.filter { it.isNotBlank() }.joinToString(" ")
 
     /**
-     * Force-stops [packageName]. Uses the privileged `am force-stop` when
-     * elevated; in Standard mode it launches the platform's force-stop screen,
-     * space-aware with "system settings".
+     * Force-stops [packageName].
+     * FIXED: Standard mode now properly checks if app settings launch succeeded,
+     * instead of always returning Success even when launch fails.
      */
     suspend fun forceStop(context: Context, packageName: String): AppActionResult = withContext(Dispatchers.IO) {
         if (hasElevation()) {
@@ -56,17 +43,19 @@ object AppManagementController {
                 AppActionResult.Failure("Force-stop failed: $detail")
             }
         } else {
-            openAppSettings(context, packageName)
-            AppActionResult.Success("Opened Android's app-info screen — choose \"Force stop\" there.")
+            val opened = openAppSettings(context, packageName)
+            if (opened) {
+                AppActionResult.Success("Opened Android's app-info screen — choose \"Force stop\" there.")
+            } else {
+                AppActionResult.Failure("Could not open app settings for $packageName — no activity found.")
+            }
         }
     }
 
     /**
-     * Uninstalls [packageName]. With elevation it runs `pm uninstall --user 0`,
-     * which removes the package for the current user in one step and — unlike the
-     * interactive `pm uninstall` — never needs a second `input keyevent ENTER`.
-     * Standard mode falls back to the ACTION_DELETE intent, which opens Android's
-     * own confirmation flow.
+     * Uninstalls [packageName].
+     * FIXED: Correct wording for system app removal via pm uninstall --user 0
+     * which removes for current user but app remains on device.
      */
     suspend fun uninstall(context: Context, packageName: String): AppActionResult = withContext(Dispatchers.IO) {
         if (hasElevation()) {
@@ -99,28 +88,26 @@ object AppManagementController {
         }
     }
 
-    /**
-     * Privileged uninstall succeeded on the "Success" line — unless the output
-     * already carries Android's "the shell does not have permission" error, which
-     * `pm` still prefixes with `Success` in some releases.
-     */
     private fun removedSuccess(packageName: String, result: ShellExecutionResult): AppActionResult {
         val combined = result.combined()
         return if (combined.contains("not permitted", ignoreCase = true)) {
             AppActionResult.Failure("Uninstall failed: the shell does not have permission for $packageName.")
         } else {
-            AppActionResult.Success("$packageName uninstalled.")
+            // FIXED: pm uninstall --user 0 removes for current user, system app remains on device
+            // Wording must reflect this distinction
+            AppActionResult.Success("$packageName removed for current user (system apps remain on device, user data cleared).")
         }
     }
 
-    /** Launches the system app-details screen for [packageName]. */
-    private fun openAppSettings(context: Context, packageName: String) {
-        runCatching {
+    /** Launches system app-details screen, returns true if succeeded */
+    private fun openAppSettings(context: Context, packageName: String): Boolean {
+        return runCatching {
             val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                 data = Uri.parse("package:$packageName")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-        }
+            true
+        }.getOrElse { false }
     }
 }

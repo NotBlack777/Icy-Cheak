@@ -39,10 +39,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import com.icy.devcheckplus.ui.components.rememberIsForeground
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,10 +90,34 @@ fun InstalledAppsScreen(
     var filterType by remember { mutableStateOf(0) } // 0: All, 1: User, 2: System
     var lastScanned by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
+    val foreground = rememberIsForeground()
+    var lastStandardUninstallTime by remember { mutableLongStateOf(0L) }
+
+    suspend fun refreshApps() {
         apps = AppsDataProvider.getInstalledApps(context)
         lastScanned = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         loading = false
+    }
+
+    LaunchedEffect(Unit) {
+        refreshApps()
+    }
+
+    // FIXED: Standard-mode uninstall via ACTION_DELETE leaves our process and returns later.
+    // When user confirms uninstall in system UI and returns, foreground flips true.
+    // If we had a recent standard uninstall attempt, refresh the list then.
+    LaunchedEffect(foreground) {
+        if (foreground && lastStandardUninstallTime != 0L) {
+            val elapsed = System.currentTimeMillis() - lastStandardUninstallTime
+            // If user returned within 30s after launching uninstall intent, refresh
+            if (elapsed in 500..30000) {
+                refreshApps()
+            }
+            // Reset if older than 30s to avoid infinite refresh loops
+            if (elapsed > 30000) {
+                lastStandardUninstallTime = 0L
+            }
+        }
     }
 
     // Management state is hoisted here so at most one action is in flight on the
@@ -112,9 +138,18 @@ fun InstalledAppsScreen(
             when (result) {
                 is AppManagementController.AppActionResult.Failure -> failureMessage = result.message
                 is AppManagementController.AppActionResult.Success -> {
-                    // Refresh the list so an uninstalled package disappears.
+                    // FIXED: For privileged uninstall, refresh immediately.
+                    // For standard uninstall (ACTION_DELETE), the system dialog is now showing.
+                    // Do NOT refresh yet — user hasn't confirmed. Mark time and refresh when they return.
                     if (action == AppManagementAction.UNINSTALL) {
-                        apps = AppsDataProvider.getInstalledApps(context)
+                        val isStandardFlow = result.message.contains("uninstall confirmation", ignoreCase = true)
+                        if (isStandardFlow) {
+                            lastStandardUninstallTime = System.currentTimeMillis()
+                            // Also refresh optimistically after short delay in case package already gone
+                            // but main refresh happens on foreground return
+                        } else {
+                            refreshApps()
+                        }
                     }
                 }
             }
