@@ -37,6 +37,7 @@ import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.liveMetric
 import com.icy.devcheckplus.ui.components.rememberLiveMetric
 import com.icy.devcheckplus.ui.components.rememberLiveMetricsSnapshot
+import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
 import com.icy.devcheckplus.ui.theme.AccentGreen
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import java.util.Locale
@@ -125,13 +126,14 @@ fun BatteryScreen(
 private fun BatteryTelemetryHeader() {
     val level = rememberLiveMetric { it.batteryLevel }
     val charging = rememberLiveMetric { it.batteryCharging }
+    val interval = rememberPollIntervalLabel()
     GlassSectionHeader(
         title = "LIVE TELEMETRY",
         icon = Icons.Default.Speed,
         supporting = if (level >= 0) {
-            "$level% • ${if (charging) "charging" else "discharging"}"
+            "$level% • ${if (charging) "charging" else "discharging"} • every $interval"
         } else {
-            "live sampling"
+            "every $interval"
         }
     )
 }

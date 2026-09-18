@@ -74,9 +74,13 @@ object DeviceReport {
     private const val LABEL_WIDTH = 26
 
     /** Collects every category and renders it in the requested [format]. */
-    suspend fun build(context: Context, format: ReportFormat): String = withContext(Dispatchers.IO) {
+    suspend fun build(
+        context: Context,
+        format: ReportFormat,
+        sections: Set<ReportSection> = ReportSection.ALL
+    ): String = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
-        val model = collect(appContext)
+        val model = collect(appContext, sections)
         val body = if (format == ReportFormat.JSON) renderJson(model) else renderText(model)
         if (body.length > MAX_SHARE_CHARS) {
             body.take(MAX_SHARE_CHARS) +
@@ -106,25 +110,62 @@ object DeviceReport {
     /*  Collection                                                         */
     /* ------------------------------------------------------------------ */
 
-    private suspend fun collect(context: Context): ReportModel = coroutineScope {
-        val telemetry = async { telemetrySections(context) }
-        val hardware = async { guarded(context, "Hardware") { HardwareDataProvider.getHardwareSections(it) } }
-        val software = async { guarded(context, "Software") { SoftwareDataProvider.getSoftwareSections(it) } }
-        val battery = async { guarded(context, "Battery") { BatteryDataProvider.getBatterySections(it) } }
-        val storage = async { guarded(context, "Storage") { storageSections(it) } }
-        val network = async {
-            guarded(context, "Network") {
-                NetworkDataProvider.getNetworkSections(it, AppSettingsStore.publicIpLookupEnabled(it))
+    /**
+     * Collects the categories the user selected (all of them by default).
+     *
+     * Only selected categories are collected at all, so deselecting e.g.
+     * "Processes" also skips that privileged read instead of merely hiding it from
+     * the output.
+     */
+    private suspend fun collect(context: Context, sections: Set<ReportSection>): ReportModel = coroutineScope {
+        val wanted = sections.ifEmpty { ReportSection.ALL }
+
+        val telemetry = if (ReportSection.TELEMETRY in wanted) async { telemetrySections(context) } else null
+        val hardware = if (ReportSection.HARDWARE in wanted) {
+            async { guarded(context, "Hardware") { HardwareDataProvider.getHardwareSections(it) } }
+        } else null
+        val software = if (ReportSection.SOFTWARE in wanted) {
+            async { guarded(context, "Software") { SoftwareDataProvider.getSoftwareSections(it) } }
+        } else null
+        val battery = if (ReportSection.BATTERY in wanted) {
+            async { guarded(context, "Battery") { BatteryDataProvider.getBatterySections(it) } }
+        } else null
+        val storage = if (ReportSection.STORAGE in wanted) {
+            async { guarded(context, "Storage") { storageSections(it) } }
+        } else null
+        val network = if (ReportSection.NETWORK in wanted) {
+            async {
+                guarded(context, "Network") {
+                    NetworkDataProvider.getNetworkSections(it, AppSettingsStore.publicIpLookupEnabled(it))
+                }
             }
-        }
-        val processes = async { guarded(context, "Processes") { processSections(it) } }
-        val apps = async { guarded(context, "Installed apps") { appSections(it) } }
-        val sensors = async { guarded(context, "Sensors") { sensorSections(it) } }
+        } else null
+        val processes = if (ReportSection.PROCESSES in wanted) {
+            async { guarded(context, "Processes") { processSections(it) } }
+        } else null
+        val apps = if (ReportSection.INSTALLED_APPS in wanted) {
+            async { guarded(context, "Installed apps") { appSections(it) } }
+        } else null
+        val sensors = if (ReportSection.SENSORS in wanted) {
+            async { guarded(context, "Sensors") { sensorSections(it) } }
+        } else null
 
         val now = Date()
         val zone = TimeZone.getDefault()
         val human = SimpleDateFormat("yyyy-MM-dd HH:mm:ss z", Locale.US).apply { timeZone = zone }
         val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US).apply { timeZone = zone }
+
+        val categories = buildList {
+            telemetry?.let { add(ReportCategory("LIVE TELEMETRY", it.await())) }
+            hardware?.let { add(ReportCategory("HARDWARE", it.await())) }
+            software?.let { add(ReportCategory("SOFTWARE", it.await())) }
+            battery?.let { add(ReportCategory("BATTERY", it.await())) }
+            storage?.let { add(ReportCategory("STORAGE", it.await())) }
+            network?.let { add(ReportCategory("NETWORK", it.await())) }
+            processes?.let { add(ReportCategory("PROCESSES", it.await())) }
+            apps?.let { add(ReportCategory("INSTALLED APPS", it.await())) }
+            sensors?.let { add(ReportCategory("SENSORS", it.await())) }
+        }
 
         ReportModel(
             appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
@@ -133,17 +174,7 @@ object DeviceReport {
             timeZone = zone.id ?: "unknown",
             device = deviceItems(),
             privilege = privilegeItems(),
-            categories = listOf(
-                ReportCategory("LIVE TELEMETRY", telemetry.await()),
-                ReportCategory("HARDWARE", hardware.await()),
-                ReportCategory("SOFTWARE", software.await()),
-                ReportCategory("BATTERY", battery.await()),
-                ReportCategory("STORAGE", storage.await()),
-                ReportCategory("NETWORK", network.await()),
-                ReportCategory("PROCESSES", processes.await()),
-                ReportCategory("INSTALLED APPS", apps.await()),
-                ReportCategory("SENSORS", sensors.await())
-            )
+            categories = categories
         )
     }
 

@@ -4,13 +4,18 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.icy.devcheckplus.data.BackgroundAnimation
+import com.icy.devcheckplus.data.GradientStyle
 
 /**
  * Describes how much "liquid glass" the current theme is allowed to use.
  *
- * Everything expensive (blur, elevation, the animated ambient background) is
- * driven from this single object so a theme switch can dial the whole UI down
- * to a cheap, flat, zero-per-frame rendering path — that is what OLED mode does.
+ * Everything expensive (blur, elevation, the animated ambient background, the
+ * gradient treatment) is driven from this single object so a theme switch — or a
+ * user preference — can dial the whole UI down to a cheap, flat, zero-per-frame
+ * rendering path. OLED mode does exactly that, and it is also where the user's
+ * gradient/animation choices are forced down for contrast and battery reasons
+ * (unless they explicitly opted back in — see [glassSpecFor]).
  */
 @Immutable
 data class GlassSpec(
@@ -27,18 +32,23 @@ data class GlassSpec(
     val cardElevation: Dp,
     val borderAlpha: Float,
     val sheenAlpha: Float,
-    /** Whether the ambient Canvas animation behind screens runs at all. */
-    val ambientAnimation: Boolean,
+    /** Ambient background style actually in effect (already OLED-adjusted). */
+    val ambientStyle: BackgroundAnimation = BackgroundAnimation.GRADIENT_DRIFT,
     /** Multiplier applied to ambient blob/particle alpha. */
-    val ambientIntensity: Float,
-    val particleCount: Int,
+    val ambientIntensity: Float = 1f,
+    val particleCount: Int = 0,
+    /** Surface gradient treatment (forced to [GradientStyle.SOLID] in OLED). */
+    val gradientStyle: GradientStyle = GradientStyle.DEFAULT,
     /** Soft glow around chart strokes / selected tiles. */
-    val glow: Boolean
+    val glow: Boolean = true
 ) {
     val isOled: Boolean get() = themeMode == ThemeMode.OLED
     val isLight: Boolean get() = themeMode == ThemeMode.LIGHT
     val cardBlurEnabled: Boolean get() = cardBlurRadius > 0.dp
     val barBlurEnabled: Boolean get() = barBlurRadius > 0.dp
+
+    /** Whether the ambient canvas animates at all (false = one static layer). */
+    val ambientAnimation: Boolean get() = ambientStyle != BackgroundAnimation.NONE
 
     companion object {
         /** Full frosted-glass treatment on the elevated dark ramp. */
@@ -51,9 +61,10 @@ data class GlassSpec(
             cardElevation = 3.dp,
             borderAlpha = 0.22f,
             sheenAlpha = 0.10f,
-            ambientAnimation = true,
+            ambientStyle = BackgroundAnimation.GRADIENT_DRIFT,
             ambientIntensity = 1f,
             particleCount = 12,
+            gradientStyle = GradientStyle.DEFAULT,
             glow = true
         )
 
@@ -67,9 +78,10 @@ data class GlassSpec(
             cardElevation = 2.dp,
             borderAlpha = 0.18f,
             sheenAlpha = 0.35f,
-            ambientAnimation = true,
+            ambientStyle = BackgroundAnimation.GRADIENT_DRIFT,
             ambientIntensity = 0.55f,
             particleCount = 8,
+            gradientStyle = GradientStyle.DEFAULT,
             glow = false
         )
 
@@ -86,12 +98,53 @@ data class GlassSpec(
             cardElevation = 0.dp,
             borderAlpha = 0.28f,
             sheenAlpha = 0f,
-            ambientAnimation = false,
+            ambientStyle = BackgroundAnimation.NONE,
             ambientIntensity = 0f,
             particleCount = 0,
+            gradientStyle = GradientStyle.SOLID,
             glow = false
         )
     }
+}
+
+/**
+ * Resolves the glass budget for the active theme plus the user's appearance
+ * preferences.
+ *
+ * @param ambientStyle already OLED-adjusted by the theme composable (i.e. the
+ *        caller has applied the "forced to None unless explicitly overridden"
+ *        rule), so this function only lowers the *intensity* in OLED.
+ */
+fun glassSpecFor(
+    themeMode: ThemeMode,
+    isDark: Boolean,
+    ambientStyle: BackgroundAnimation,
+    gradientStyle: GradientStyle
+): GlassSpec {
+    val base = when {
+        themeMode == ThemeMode.OLED -> GlassSpec.Oled
+        isDark -> GlassSpec.DeepDark
+        else -> GlassSpec.Light
+    }
+    val oled = themeMode == ThemeMode.OLED
+    return base.copy(
+        ambientStyle = ambientStyle,
+        // An explicit override in OLED is honoured, but at reduced intensity and
+        // particle count: true black panels make every lit pixel expensive.
+        ambientIntensity = when {
+            !oled -> base.ambientIntensity
+            ambientStyle == BackgroundAnimation.NONE -> 0f
+            else -> 0.45f
+        },
+        particleCount = when {
+            ambientStyle != BackgroundAnimation.PARTICLES -> 0
+            oled -> 6
+            else -> base.particleCount
+        },
+        // Gradients are disabled on OLED for contrast (near-black panels show
+        // banding) and for overdraw; the user's choice applies to the other modes.
+        gradientStyle = if (oled) GradientStyle.SOLID else gradientStyle
+    )
 }
 
 /** Resolved for the active theme; read it instead of branching on [ThemeMode]. */

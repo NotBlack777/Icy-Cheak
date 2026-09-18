@@ -10,6 +10,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.LiveMetrics
 import com.icy.devcheckplus.data.LiveMetricsPoller
 import com.icy.devcheckplus.data.LiveMetricsRepository
+import com.icy.devcheckplus.data.UserPreferencesStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
@@ -81,3 +82,16 @@ fun <T> State<LiveMetrics>.liveMetric(selector: (LiveMetrics) -> T): T {
  */
 @Composable
 fun rememberLiveMetricsInitial(): LiveMetrics = remember { LiveMetricsRepository.snapshot() }
+
+/**
+ * The cadence the shared ticker is actually running at, formatted for humans
+ * ("1 s", "0.5 s"). Read it in the label that displays it, so changing the
+ * interval in Settings updates that label and nothing else.
+ */
+@Composable
+fun rememberPollIntervalLabel(): String {
+    val ms by UserPreferencesStore.pollIntervalMs.collectAsStateWithLifecycle(
+        initialValue = UserPreferencesStore.pollIntervalMs.value
+    )
+    return UserPreferencesStore.formatPollInterval(ms)
+}

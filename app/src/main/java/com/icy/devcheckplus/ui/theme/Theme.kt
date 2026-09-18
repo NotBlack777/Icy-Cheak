@@ -1,6 +1,7 @@
 package com.icy.devcheckplus.ui.theme
 
 import android.os.Build
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -9,6 +10,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -17,6 +19,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.icy.devcheckplus.data.AccentPalette
+import com.icy.devcheckplus.data.BackgroundAnimation
+import com.icy.devcheckplus.data.GradientStyle
 
 /**
  * Standard elevated dark ramp (#121212-ish) — used by [ThemeMode.DARK] and by
@@ -64,7 +69,7 @@ private val LightColorScheme = lightColorScheme(
  * Forces every container role onto true black while keeping the accent colours
  * of the source scheme (so dynamic colour still works in OLED mode).
  */
-private fun ColorScheme.toOledBlack(): ColorScheme = copy(
+internal fun ColorScheme.toOledBlack(): ColorScheme = copy(
     background = OledBackground,
     onBackground = OledTextPrimary,
     surface = OledSurface,
@@ -97,18 +102,31 @@ private val DevCheckTypography = Typography(
 )
 
 /**
- * App theme.
+ * App theme — the single place where appearance preferences become Material 3
+ * roles. No screen hardcodes an accent or a gradient.
  *
  * @param themeMode SYSTEM / LIGHT / DARK / OLED — persisted by `AppSettingsStore`
  *                  and applied app-wide from [com.icy.devcheckplus.MainActivity].
  * @param dynamicColor keeps Material 3 "Material You" wallpaper colours enabled;
  *                     it composes with every theme mode (OLED blacks out the
  *                     container roles but keeps the dynamic accents).
+ * @param accent the user's accent choice from Settings › Colors & Theming. It
+ *               rewrites the accent roles of whichever base scheme is active.
+ * @param gradientStyle surface gradient treatment; forced to
+ *                      [GradientStyle.SOLID] in OLED mode.
+ * @param backgroundAnimation ambient animation; **forced to
+ *               [BackgroundAnimation.NONE] in OLED mode** unless
+ *               [backgroundAnimationOverride] is set, which the UI only does
+ *               after the user confirms the battery warning.
  */
 @Composable
 fun DevCheckPlusTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColor: Boolean = true,
+    accent: AccentPalette = AccentPalette.DEFAULT,
+    gradientStyle: GradientStyle = GradientStyle.DEFAULT,
+    backgroundAnimation: BackgroundAnimation = BackgroundAnimation.GRADIENT_DRIFT,
+    backgroundAnimationOverride: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -130,19 +148,41 @@ fun DevCheckPlusTheme(
         else -> LightColorScheme
     }
 
-    val colorScheme = remember(resolvedScheme, isOled) {
-        if (isOled) resolvedScheme.toOledBlack() else resolvedScheme
+    // Accent first, OLED black-out second: the black-out keeps the accent roles
+    // and re-tints the containers, which is exactly what OLED mode should do.
+    val colorScheme = remember(resolvedScheme, isOled, accent) {
+        val accented = resolvedScheme.withAccent(accent)
+        if (isOled) accented.toOledBlack() else accented
     }
 
-    val glassSpec = remember(themeMode, useDark) {
-        when {
-            isOled -> GlassSpec.Oled
-            useDark -> GlassSpec.DeepDark
-            else -> GlassSpec.Light
-        }
+    // OLED rule: no animation unless the user explicitly opted in (and said yes
+    // to the battery warning shown by the picker).
+    val effectiveAnimation = if (isOled && !backgroundAnimationOverride) {
+        BackgroundAnimation.NONE
+    } else {
+        backgroundAnimation
     }
 
-    CompositionLocalProvider(LocalGlassSpec provides glassSpec) {
+    val glassSpec = remember(themeMode, useDark, effectiveAnimation, gradientStyle) {
+        glassSpecFor(
+            themeMode = themeMode,
+            isDark = useDark,
+            ambientStyle = effectiveAnimation,
+            gradientStyle = gradientStyle
+        )
+    }
+
+    // Ripple tinted with the live accent, so press feedback matches the theme
+    // instead of the platform's default grey. Material 3 components additionally
+    // pick up the accent through the colour roles above.
+    val indication = remember(colorScheme.primary) {
+        ripple(color = colorScheme.primary.copy(alpha = 0.42f))
+    }
+
+    CompositionLocalProvider(
+        LocalGlassSpec provides glassSpec,
+        LocalIndication provides indication
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = DevCheckTypography,

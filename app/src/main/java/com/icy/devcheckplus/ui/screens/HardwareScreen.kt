@@ -37,6 +37,7 @@ import com.icy.devcheckplus.ui.components.LiveChartCard
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.liveMetric
 import com.icy.devcheckplus.ui.components.rememberLiveMetricsSnapshot
+import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
 import com.icy.devcheckplus.ui.theme.ChartPalette
 import java.util.Locale
 
@@ -98,11 +99,9 @@ fun HardwareScreen(
             LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
                 if (showCharts) {
                     item(key = "hardware_telemetry_header") {
-                        GlassSectionHeader(
-                            title = "LIVE TELEMETRY",
-                            icon = Icons.Default.Speed,
-                            supporting = "live sampling"
-                        )
+                        // Leaf-scoped read of the user's cadence, so changing it in
+                        // Settings updates this label and nothing else.
+                        LiveTelemetryHeader()
                     }
                     item(key = "hardware_chart_cpu") {
                         CpuFrequencyChart()
@@ -123,6 +122,15 @@ fun HardwareScreen(
             }
         }
     }
+}
+
+@Composable
+private fun LiveTelemetryHeader() {
+    GlassSectionHeader(
+        title = "LIVE TELEMETRY",
+        icon = Icons.Default.Speed,
+        supporting = "${rememberPollIntervalLabel()} sampling • shared ticker"
+    )
 }
 
 @Composable

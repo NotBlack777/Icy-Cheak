@@ -16,7 +16,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.icy.devcheckplus.data.BackgroundAnimation
 import com.icy.devcheckplus.ui.theme.LocalGlassSpec
+import com.icy.devcheckplus.ui.theme.ambientBrush
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -54,18 +56,17 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
     val foreground = rememberIsForeground()
     val scrolling = LocalScrollActivity.current.value
 
-    val baseBrush = remember(scheme.background, scheme.surfaceVariant, spec.isOled) {
-        Brush.verticalGradient(
-            listOf(
-                scheme.background,
-                scheme.surfaceVariant.copy(alpha = if (spec.isOled) 0.10f else 0.28f),
-                scheme.background
-            )
-        )
+    // The static layer: painted once, never part of an animated frame. It follows
+    // the user's gradient style, so "Solid" also flattens the backdrop.
+    val baseBrush = remember(scheme, spec.gradientStyle, spec.isOled) {
+        spec.gradientStyle.ambientBrush(scheme, spec.isOled)
     }
 
-    // The static layer: painted once, never part of an animated frame.
-    val animating = spec.ambientAnimation && foreground && !scrolling
+    val style = spec.ambientStyle
+    val animating = style != BackgroundAnimation.NONE &&
+        spec.ambientIntensity > 0.001f &&
+        foreground &&
+        !scrolling
 
     if (!animating) {
         Box(modifier = modifier.fillMaxSize().background(baseBrush))
@@ -125,7 +126,7 @@ fun AmbientBackground(modifier: Modifier = Modifier) {
                 radiusFactor = 0.62f
             )
 
-            if (particles.isNotEmpty()) {
+            if (style == BackgroundAnimation.PARTICLES && particles.isNotEmpty()) {
                 particles.forEach { p ->
                     val progress = (p.startY + t * p.speed) % 1f
                     val y = h * (1f - progress)

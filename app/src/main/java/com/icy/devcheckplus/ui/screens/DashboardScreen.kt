@@ -57,6 +57,7 @@ import com.icy.devcheckplus.ui.components.PinToggleButton
 import com.icy.devcheckplus.ui.components.TrackScrollActivity
 import com.icy.devcheckplus.ui.components.rememberIsForeground
 import com.icy.devcheckplus.ui.components.rememberLiveMetric
+import com.icy.devcheckplus.ui.components.rememberPollIntervalLabel
 import com.icy.devcheckplus.ui.theme.AccentOrange
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -462,15 +463,21 @@ private fun EmptyDashboard(modifier: Modifier = Modifier) {
                 RamSnapshotTile(modifier = Modifier.weight(1f))
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Shared ticker • pauses in the background",
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant
-            )
+            LiveSamplingCaption()
         }
 
         Spacer(modifier = Modifier.height(10.dp))
     }
+}
+
+@Composable
+private fun LiveSamplingCaption() {
+    val label = rememberPollIntervalLabel()
+    Text(
+        text = "Shared ticker • every $label • pauses in the background",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable

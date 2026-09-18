@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Adb
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
@@ -33,10 +34,13 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,17 +58,28 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.BuildConfig
+import com.icy.devcheckplus.data.AccentPalette
 import com.icy.devcheckplus.data.AppSettingsStore
+import com.icy.devcheckplus.data.BackgroundAnimation
 import com.icy.devcheckplus.data.LiveMetricsRepository
+import com.icy.devcheckplus.data.ReportSection
+import com.icy.devcheckplus.data.SettingsSectionId
+import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.privilege.PrivilegeMode
 import com.icy.devcheckplus.privilege.PrivilegeStatus
+import com.icy.devcheckplus.ui.components.AccentGrid
 import com.icy.devcheckplus.ui.components.AmbientBackground
+import com.icy.devcheckplus.ui.components.BackgroundAnimationGrid
 import com.icy.devcheckplus.ui.components.ExportReportDialog
 import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassRow
-import com.icy.devcheckplus.ui.components.HapticSwitch
 import com.icy.devcheckplus.ui.components.GlassSectionHeader
+import com.icy.devcheckplus.ui.components.GradientGrid
+import com.icy.devcheckplus.ui.components.HapticSwitch
+import com.icy.devcheckplus.ui.components.PillAction
+import com.icy.devcheckplus.ui.components.PollIntervalSheet
+import com.icy.devcheckplus.ui.components.ReportSectionsSheet
 import com.icy.devcheckplus.ui.components.SelectableTile
 import com.icy.devcheckplus.ui.components.ThemeModePreview
 import com.icy.devcheckplus.ui.components.TileGrid
@@ -79,16 +94,15 @@ import kotlinx.coroutines.launch
 /**
  * Settings — grouped frosted-glass cards over an ambient animated background.
  *
- * All the original capabilities are still here (privilege/execution selector,
- * public IP lookup opt-in, onboarding relaunch, about) and the persisted keys
- * are untouched; only the presentation changed, plus the new Appearance section
- * with Dark / OLED themes and dynamic colour.
+ * Structure: the list is generated from [SettingsSectionId] so the section order
+ * and visibility can be driven by stored preferences (see the organizer in the
+ * header) without touching this composable.
  *
- * Recomposition note: this screen root intentionally subscribes to *nothing*.
- * Each card collects exactly the preference it renders (and the privilege banner
- * its own status), so flipping a switch or picking a theme tile invalidates that
- * card alone — previously every one of these flows was read at the top of
- * [SettingsScreen], which meant the whole LazyColumn re-ran on any change.
+ * Recomposition note: this screen root subscribes only to the *layout* preference
+ * (section order/visibility). Every value shown in a row is collected by the card
+ * that displays it, so flipping a switch, picking an accent or changing the poll
+ * interval invalidates that card alone — previously all of these flows were read
+ * at the top of the screen, which meant the whole LazyColumn re-ran on any change.
  */
 @Composable
 fun SettingsScreen(
@@ -96,6 +110,15 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     var showExportDialog by remember { mutableStateOf(false) }
+    var showPollIntervalSheet by remember { mutableStateOf(false) }
+    var showReportSectionsSheet by remember { mutableStateOf(false) }
+    var showAnimationWarning by remember { mutableStateOf(false) }
+    var pendingAnimation by remember { mutableStateOf(BackgroundAnimation.GRADIENT_DRIFT) }
+
+    val sectionOrder by UserPreferencesStore.settingsSectionOrder
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.settingsSectionOrder.value)
+    val hiddenSections by UserPreferencesStore.hiddenSettingsSections
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.hiddenSettingsSections.value)
 
     val listState = rememberLazyListState()
     TrackScrollActivity(listState)
@@ -112,46 +135,35 @@ fun SettingsScreen(
                 SettingsHeader()
             }
 
-            item(key = "header_appearance") {
-                GlassSectionHeader(title = "APPEARANCE", icon = Icons.Default.Palette)
-            }
-            item(key = "card_theme") {
-                ThemeCard()
-            }
-
-            item(key = "header_privilege") {
-                GlassSectionHeader(title = "PRIVILEGE ENGINE", icon = Icons.Default.Lock)
-            }
-            item(key = "card_privilege") {
-                PrivilegeCard()
-            }
-
-            item(key = "header_privacy") {
-                GlassSectionHeader(title = "PRIVACY & NETWORK", icon = Icons.Default.Public)
-            }
-            item(key = "card_privacy") {
-                PrivacyCard()
-            }
-
-            item(key = "header_general") {
-                GlassSectionHeader(title = "GENERAL", icon = Icons.Default.Tune)
-            }
-            item(key = "card_general") {
-                GeneralCard(onResetOnboarding = onResetOnboarding)
-            }
-
-            item(key = "header_export") {
-                GlassSectionHeader(title = "EXPORT & SHARE", icon = Icons.Default.Share)
-            }
-            item(key = "card_export") {
-                ExportCard(onExport = { showExportDialog = true })
-            }
-
-            item(key = "header_about") {
-                GlassSectionHeader(title = "ABOUT", icon = Icons.Default.Info)
-            }
-            item(key = "card_about") {
-                AboutCard()
+            val visibleSections = sectionOrder.filterNot { it in hiddenSections }
+            visibleSections.forEach { section ->
+                item(key = "header_${section.name}") {
+                    GlassSectionHeader(title = section.title, icon = section.icon())
+                }
+                item(key = "card_${section.name}") {
+                    when (section) {
+                        SettingsSectionId.APPEARANCE -> ThemeCard()
+                        SettingsSectionId.THEMING -> ThemingCard()
+                        SettingsSectionId.BACKGROUND -> BackgroundAnimationCard(
+                            onRequestAnimation = { requested ->
+                                // OLED forces "None" unless the user explicitly opts
+                                // back in, which is what the warning confirms.
+                                pendingAnimation = requested
+                                showAnimationWarning = true
+                            }
+                        )
+                        SettingsSectionId.PRIVILEGE -> PrivilegeCard()
+                        SettingsSectionId.PRIVACY -> PrivacyCard(
+                            onPollIntervalClick = { showPollIntervalSheet = true }
+                        )
+                        SettingsSectionId.GENERAL -> GeneralCard(onResetOnboarding = onResetOnboarding)
+                        SettingsSectionId.EXPORT -> ExportCard(
+                            onExport = { showExportDialog = true },
+                            onSectionsClick = { showReportSectionsSheet = true }
+                        )
+                        SettingsSectionId.ABOUT -> AboutCard()
+                    }
+                }
             }
 
             item(key = "settings_footer") {
@@ -170,10 +182,89 @@ fun SettingsScreen(
         if (showExportDialog) {
             ExportReportDialog(onDismiss = { showExportDialog = false })
         }
+
+        if (showPollIntervalSheet) {
+            val interval by UserPreferencesStore.pollIntervalMs
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.pollIntervalMs.value)
+            PollIntervalSheet(
+                currentMs = interval,
+                onSelect = { UserPreferencesStore.setPollInterval(it) },
+                onDismiss = { showPollIntervalSheet = false }
+            )
+        }
+
+        if (showReportSectionsSheet) {
+            val sections by UserPreferencesStore.reportSections
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.reportSections.value)
+            ReportSectionsSheet(
+                selected = sections,
+                onToggle = { section, included -> UserPreferencesStore.toggleReportSection(section, included) },
+                onSelectAll = { UserPreferencesStore.setReportSections(ReportSection.ALL) },
+                onDismiss = { showReportSectionsSheet = false }
+            )
+        }
+
+        if (showAnimationWarning) {
+            val oled = AppSettingsStore.themeMode
+                .collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
+                .value == ThemeMode.OLED
+            AlertDialog(
+                onDismissRequest = { showAnimationWarning = false },
+                shape = MaterialTheme.shapes.large,
+                containerColor = MaterialTheme.colorScheme.surface,
+                title = { Text("Keep the animation on?", style = MaterialTheme.typography.titleMedium) },
+                text = {
+                    Text(
+                        text = if (oled) {
+                            "May increase battery usage on OLED displays. Animated backgrounds light up " +
+                                "pixels that true-black surfaces would otherwise leave off, and the " +
+                                "animation is redrawn continuously. It stays available, at reduced " +
+                                "intensity, if you want it."
+                        } else {
+                            "May increase battery usage on OLED displays — the animation is redrawn " +
+                                "continuously. It is used at reduced intensity in OLED mode."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            UserPreferencesStore.setBackgroundAnimation(pendingAnimation, explicitOverride = true)
+                            showAnimationWarning = false
+                        }
+                    ) {
+                        Text("Keep animation")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            UserPreferencesStore.setBackgroundAnimation(BackgroundAnimation.NONE)
+                            showAnimationWarning = false
+                        }
+                    ) {
+                        Text("Use None")
+                    }
+                }
+            )
+        }
     }
 }
 
-/** Status pill source — collected where it is displayed, not at screen level. */
+private fun SettingsSectionId.icon(): ImageVector = when (this) {
+    SettingsSectionId.APPEARANCE -> Icons.Default.Palette
+    SettingsSectionId.THEMING -> Icons.Default.ColorLens
+    SettingsSectionId.BACKGROUND -> Icons.Default.Wallpaper
+    SettingsSectionId.PRIVILEGE -> Icons.Default.Lock
+    SettingsSectionId.PRIVACY -> Icons.Default.Public
+    SettingsSectionId.GENERAL -> Icons.Default.Tune
+    SettingsSectionId.EXPORT -> Icons.Default.Share
+    SettingsSectionId.ABOUT -> Icons.Default.Info
+}
+
+/** Status source — collected where it is displayed, not at screen level. */
 @Composable
 private fun rememberPrivilegeStatus(): PrivilegeStatus =
     PrivilegeManager.status.collectAsStateWithLifecycle(initialValue = PrivilegeManager.status.value).value
@@ -220,6 +311,11 @@ private fun SettingsHeader() {
     }
 }
 
+/**
+ * Privilege status *label*, not a control: it reports the active elevation level
+ * and therefore carries no click indication (the rows below it do the selecting),
+ * so it cannot be mistaken for a tappable chip.
+ */
 @Composable
 private fun StatusPill(status: PrivilegeStatus) {
     val scheme = MaterialTheme.colorScheme
@@ -263,7 +359,6 @@ private fun ThemeCard() {
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
 
-    // Collected here: a theme pick or a toggle only invalidates this card.
     val themeMode by AppSettingsStore.themeMode.collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
     val dynamicColor by AppSettingsStore.dynamicColor.collectAsStateWithLifecycle(initialValue = AppSettingsStore.dynamicColor.value)
     val hapticFeedback by AppSettingsStore.hapticFeedback.collectAsStateWithLifecycle(initialValue = AppSettingsStore.hapticFeedback.value)
@@ -300,6 +395,15 @@ private fun ThemeCard() {
 
         DetailNote(text = themeMode.detailText)
 
+        if (themeMode == ThemeMode.OLED) {
+            Spacer(modifier = Modifier.height(8.dp))
+            DetailNote(
+                text = "OLED sets surfaces to pure black, disables blur, elevation, gradients and " +
+                    "the background animation, and drops the poll-driven repaint cost — the " +
+                    "smoothest, lowest-power rendering path."
+            )
+        }
+
         HorizontalDivider(
             modifier = Modifier.padding(vertical = 14.dp),
             color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
@@ -310,7 +414,7 @@ private fun ThemeCard() {
             title = "Dynamic colour",
             icon = Icons.Default.Palette,
             subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                "Pull accents from your wallpaper (Material You)."
+                "Pull accents from your wallpaper (Material You). An accent picked below overrides it."
             } else {
                 "Wallpaper colours need Android 12+ — the built-in cyan palette is used."
             },
@@ -353,6 +457,175 @@ private val ThemeMode.detailText: String
         ThemeMode.OLED ->
             "Pure black #000000 surfaces, opaque cards, no blur, no elevation and no background animation — minimal overdraw, best for battery life and scroll smoothness."
     }
+
+/* ------------------------------------------------------------------ */
+/*  Colors & theming                                                   */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun ThemingCard() {
+    val scheme = MaterialTheme.colorScheme
+    val spec = LocalGlassSpec.current
+    val accent by UserPreferencesStore.accent.collectAsStateWithLifecycle(initialValue = UserPreferencesStore.accent.value)
+    val gradient by UserPreferencesStore.gradient.collectAsStateWithLifecycle(initialValue = UserPreferencesStore.gradient.value)
+
+    GlassCard(frosted = true) {
+        Text(
+            text = "Accent colour",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = scheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = "Applied app-wide to buttons, switches, selection rings, highlights, ripple and " +
+                "chart strokes — nothing is hardcoded per screen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        AccentGrid(
+            selected = accent,
+            onSelect = { UserPreferencesStore.setAccent(it) }
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        DetailNote(
+            text = if (accent == AccentPalette.DEFAULT) {
+                "Currently using the theme's own accent. Pick a swatch to override it everywhere."
+            } else {
+                "${accent.label} is active. \"Default\" restores the theme/dynamic accent."
+            }
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 14.dp),
+            color = scheme.onSurface.copy(alpha = spec.borderAlpha * 0.5f),
+            thickness = 0.8.dp
+        )
+
+        Text(
+            text = "Surface gradient",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = scheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = "Sets the gradient direction and colour pair used by cards, tiles and the app bar. " +
+                "\"Solid\" disables gradients entirely.",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        GradientGrid(
+            selected = gradient,
+            onSelect = { UserPreferencesStore.setGradient(it) }
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        DetailNote(
+            text = if (spec.isOled) {
+                "OLED mode forces solid surfaces: gradients band on true-black panels and add overdraw. " +
+                    "Your choice applies again in System, Light and Dark."
+            } else {
+                "Gradients are painted by the shared glass container, so every card and surface follows this."
+            }
+        )
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Background animation                                               */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun BackgroundAnimationCard(onRequestAnimation: (BackgroundAnimation) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val spec = LocalGlassSpec.current
+    val animation by UserPreferencesStore.backgroundAnimation
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.backgroundAnimation.value)
+    val override by UserPreferencesStore.backgroundAnimationOverride
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.backgroundAnimationOverride.value)
+    val themeMode by AppSettingsStore.themeMode
+        .collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
+
+    val oled = themeMode == ThemeMode.OLED
+    val effective = if (oled && !override) BackgroundAnimation.NONE else animation
+
+    GlassCard(frosted = true) {
+        Text(
+            text = "Ambient background",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = scheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = "The animated wash behind every screen. It pauses while a list scrolls and whenever " +
+                "the app is in the background.",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        BackgroundAnimationGrid(
+            selected = effective,
+            onSelect = { picked ->
+                // Picking an animation while OLED is active raises the battery
+                // warning before anything is stored.
+                if (oled && picked != BackgroundAnimation.NONE) {
+                    onRequestAnimation(picked)
+                } else {
+                    UserPreferencesStore.setBackgroundAnimation(picked)
+                }
+            }
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        DetailNote(
+            text = when {
+                effective == BackgroundAnimation.NONE && oled && !override ->
+                    "Forced to None because OLED mode is active — animated backgrounds light up pixels " +
+                        "a true-black panel would leave off. Pick a style and confirm the warning to override."
+                effective == BackgroundAnimation.NONE ->
+                    "Nothing is animated: a single static gradient is drawn once, with no animation clock."
+                oled && override ->
+                    "OLED override active. The animation runs at reduced intensity (fewer, dimmer " +
+                        "particles) — May increase battery usage on OLED displays."
+                else ->
+                    "Runs on a single ~30 Hz clock, is skipped while scrolling, and stops completely " +
+                        "when the app is not in the foreground."
+            }
+        )
+
+        if (oled && override) {
+            Spacer(modifier = Modifier.height(10.dp))
+            GlassRow(
+                title = "Reset to None",
+                icon = Icons.Default.Wallpaper,
+                subtitle = "Return to the power-saving default for OLED displays.",
+                onClick = { UserPreferencesStore.setBackgroundAnimation(BackgroundAnimation.NONE) },
+                trailing = {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = scheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            )
+        }
+    }
+}
 
 /* ------------------------------------------------------------------ */
 /*  Privilege engine                                                   */
@@ -402,7 +675,6 @@ private fun PrivilegeCard() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scheme = MaterialTheme.colorScheme
-    val spec = LocalGlassSpec.current
     val status = rememberPrivilegeStatus()
 
     val selectMode: (PrivilegeMode) -> Unit = { mode ->
@@ -468,16 +740,18 @@ private fun PrivilegeCard() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Privacy, general, about                                            */
+/*  Privacy, general, export, about                                    */
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun PrivacyCard() {
+private fun PrivacyCard(onPollIntervalClick: () -> Unit) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
     val publicIpLookup by AppSettingsStore.publicIpLookup
         .collectAsStateWithLifecycle(initialValue = AppSettingsStore.publicIpLookup.value)
+    val pollInterval by UserPreferencesStore.pollIntervalMs
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.pollIntervalMs.value)
 
     GlassCard(frosted = true) {
         GlassRow(
@@ -501,22 +775,35 @@ private fun PrivacyCard() {
         GlassRow(
             title = "Live telemetry polling",
             icon = Icons.Default.Speed,
-            subtitle = "CPU, RAM and battery charts share one sampling loop, only while a screen is visible, and pause in the background.",
-            trailing = { PillLabel(text = "1 s") }
+            subtitle = "CPU, RAM and battery share one sampling loop while a live screen is visible, " +
+                "and it pauses in the background. Currently sampling every " +
+                "${UserPreferencesStore.formatPollInterval(pollInterval)}.",
+            onClick = onPollIntervalClick,
+            trailing = {
+                PillAction(
+                    text = UserPreferencesStore.formatPollInterval(pollInterval),
+                    onClick = onPollIntervalClick,
+                    contentDescription = "Change live telemetry polling interval"
+                )
+            }
         )
     }
 }
 
 @Composable
-private fun ExportCard(onExport: () -> Unit) {
+private fun ExportCard(onExport: () -> Unit, onSectionsClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val spec = LocalGlassSpec.current
+    val sections by UserPreferencesStore.reportSections
+        .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.reportSections.value)
+    val allIncluded = sections.size == ReportSection.ALL.size
 
     GlassCard(frosted = true) {
         GlassRow(
             title = "Export device report",
             icon = Icons.Default.Share,
-            subtitle = "Full dump of every detected category as readable text or structured JSON, sent through the Android share sheet.",
+            subtitle = "Full dump of the selected categories as readable text or structured JSON, sent " +
+                "through the Android share sheet.",
             onClick = onExport,
             trailing = {
                 Icon(
@@ -537,8 +824,25 @@ private fun ExportCard(onExport: () -> Unit) {
         GlassRow(
             title = "What is included",
             icon = Icons.Default.Info,
-            subtitle = "Hardware • Software • Battery • Storage • Network • Processes • Installed apps • Sensors • live telemetry, plus app version, device fingerprint and export timestamp.",
-            trailing = { PillLabel(text = "9 sections") }
+            subtitle = if (allIncluded) {
+                "Hardware • Software • Battery • Storage • Network • Processes • Installed apps • " +
+                    "Sensors • live telemetry. Tap to choose."
+            } else {
+                sections.sortedBy { it.ordinal }.joinToString(" • ") { it.label } +
+                    ". Tap to choose."
+            },
+            onClick = onSectionsClick,
+            trailing = {
+                PillAction(
+                    text = if (allIncluded) {
+                        "${ReportSection.ALL.size} sections"
+                    } else {
+                        "${sections.size} of ${ReportSection.ALL.size}"
+                    },
+                    onClick = onSectionsClick,
+                    contentDescription = "Choose which sections the exported report contains"
+                )
+            }
         )
     }
 }
@@ -635,6 +939,10 @@ private fun AboutCard() {
     }
 }
 
+/**
+ * Read-only summary stat. Deliberately has no click indication so the three values
+ * that merely *report* state cannot be confused with the tappable badges above.
+ */
 @Composable
 private fun InfoPill(label: String, value: String, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
@@ -686,29 +994,6 @@ private fun DetailNote(text: String) {
             style = MaterialTheme.typography.bodySmall,
             color = scheme.onSurfaceVariant,
             lineHeight = 17.sp
-        )
-    }
-}
-
-/**
- * Static value chip. It carries **no** click indication on purpose: an
- * interactive value uses `PillAction` instead, so a chip that cannot be tapped
- * can never look tappable.
- */
-@Composable
-private fun PillLabel(text: String) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(percent = 50))
-            .background(scheme.primary.copy(alpha = 0.14f))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-    ) {
-        Text(
-            text = text,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = scheme.primary
         )
     }
 }

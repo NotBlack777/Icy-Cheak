@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.devcheckplus.data.AppSettingsStore
+import com.icy.devcheckplus.data.UserPreferencesStore
 import com.icy.devcheckplus.navigation.NavCategory
 import com.icy.devcheckplus.privilege.PrivilegeManager
 import com.icy.devcheckplus.ui.components.ExportReportDialog
@@ -101,7 +102,26 @@ class MainActivity : ComponentActivity() {
             val dynamicColor by AppSettingsStore.dynamicColor
                 .collectAsStateWithLifecycle(initialValue = AppSettingsStore.dynamicColor.value)
 
-            DevCheckPlusTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
+            // Accent / gradient / ambient animation come from DataStore. Each is
+            // its own flow, so e.g. changing the poll interval does not invalidate
+            // the theme wrapper (and therefore the whole app).
+            val accent by UserPreferencesStore.accent
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.accent.value)
+            val gradient by UserPreferencesStore.gradient
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.gradient.value)
+            val backgroundAnimation by UserPreferencesStore.backgroundAnimation
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.backgroundAnimation.value)
+            val backgroundOverride by UserPreferencesStore.backgroundAnimationOverride
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.backgroundAnimationOverride.value)
+
+            DevCheckPlusTheme(
+                themeMode = themeMode,
+                dynamicColor = dynamicColor,
+                accent = accent,
+                gradientStyle = gradient,
+                backgroundAnimation = backgroundAnimation,
+                backgroundAnimationOverride = backgroundOverride
+            ) {
                 // One flag for the whole app: while any list is being scrolled the
                 // blur layers, card elevation shadows and the ambient animation
                 // stand down (see ScrollActivity.kt).
