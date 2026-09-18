@@ -38,21 +38,25 @@ fun GradientStyle.surfaceBrush(
         GradientStyle.SOLID -> null
 
         GradientStyle.DEFAULT -> Brush.verticalGradient(
-            faded(
-                flat,
-                fidelity,
-                scheme.surface.copy(alpha = (baseAlpha + 0.10f).coerceAtMost(1f)),
-                scheme.surface.copy(alpha = baseAlpha)
+            colors = faded(
+                flat = flat,
+                fidelity = fidelity,
+                stops = listOf(
+                    scheme.surface.copy(alpha = (baseAlpha + 0.10f).coerceAtMost(1f)),
+                    scheme.surface.copy(alpha = baseAlpha)
+                )
             )
         )
 
         GradientStyle.OCEAN -> Brush.linearGradient(
             colors = faded(
-                flat,
-                fidelity,
-                scheme.primary.copy(alpha = 0.26f),
-                scheme.secondary.copy(alpha = 0.12f),
-                scheme.surface.copy(alpha = baseAlpha)
+                flat = flat,
+                fidelity = fidelity,
+                stops = listOf(
+                    scheme.primary.copy(alpha = 0.26f),
+                    scheme.secondary.copy(alpha = 0.12f),
+                    scheme.surface.copy(alpha = baseAlpha)
+                )
             ),
             start = Offset.Zero,
             end = Offset.Infinite
@@ -60,11 +64,13 @@ fun GradientStyle.surfaceBrush(
 
         GradientStyle.SUNSET -> Brush.linearGradient(
             colors = faded(
-                flat,
-                fidelity,
-                AccentOrange.copy(alpha = 0.24f),
-                AccentPink.copy(alpha = 0.18f),
-                scheme.surface.copy(alpha = baseAlpha)
+                flat = flat,
+                fidelity = fidelity,
+                stops = listOf(
+                    AccentOrange.copy(alpha = 0.24f),
+                    AccentPink.copy(alpha = 0.18f),
+                    scheme.surface.copy(alpha = baseAlpha)
+                )
             ),
             start = Offset.Zero,
             end = Offset.Infinite
@@ -72,24 +78,30 @@ fun GradientStyle.surfaceBrush(
 
         GradientStyle.VOID -> Brush.verticalGradient(
             colors = faded(
-                flat,
-                fidelity,
-                scheme.tertiary.copy(alpha = 0.26f),
-                scheme.surface.copy(alpha = (baseAlpha * 0.72f).coerceIn(0f, 1f)),
-                scheme.surface.copy(alpha = baseAlpha)
+                flat = flat,
+                fidelity = fidelity,
+                stops = listOf(
+                    scheme.tertiary.copy(alpha = 0.26f),
+                    scheme.surface.copy(alpha = (baseAlpha * 0.72f).coerceIn(0f, 1f)),
+                    scheme.surface.copy(alpha = baseAlpha)
+                )
             )
         )
-
     }
 }
 
 /** Below this the surface is treated as flat: no shader is built at all. */
 private const val FLAT_TOLERANCE = 0.004f
 
-/** Lerps every gradient stop towards [flat] — the cross-fade itself. */
-private fun faded(flat: Color, fidelity: Float, vararg stops: Color): List<Color> =
+/**
+ * Lerps every gradient stop towards [flat] — the cross-fade itself.
+ *
+ * Takes a [List] rather than a vararg because Compose's `Color` is a value class
+ * and Kotlin forbids value classes as vararg parameter types.
+ */
+private fun faded(flat: Color, fidelity: Float, stops: List<Color>): List<Color> =
     if (fidelity >= 1f - FLAT_TOLERANCE) {
-        stops.toList()
+        stops
     } else {
         stops.map { lerp(flat, it, fidelity) }
 }
@@ -121,22 +133,26 @@ fun GradientStyle.ambientBrush(
         GradientStyle.SOLID -> Brush.verticalGradient(listOf(flat, flat))
 
         GradientStyle.DEFAULT -> Brush.verticalGradient(
-            faded(
-                flat,
-                fidelity,
-                scheme.background,
-                scheme.surfaceVariant.copy(alpha = variantAlpha),
-                scheme.background
+            colors = faded(
+                flat = flat,
+                fidelity = fidelity,
+                stops = listOf(
+                    scheme.background,
+                    scheme.surfaceVariant.copy(alpha = variantAlpha),
+                    scheme.background
+                )
             )
         )
 
         GradientStyle.OCEAN -> Brush.linearGradient(
             colors = faded(
-                flat,
-                fidelity,
-                scheme.primary.copy(alpha = accentAlpha),
-                scheme.background,
-                scheme.secondary.copy(alpha = accentAlpha * 0.7f)
+                flat = flat,
+                fidelity = fidelity,
+                stops = listOf(
+                    scheme.primary.copy(alpha = accentAlpha),
+                    scheme.background,
+                    scheme.secondary.copy(alpha = accentAlpha * 0.7f)
+                )
             ),
             start = Offset.Zero,
             end = Offset.Infinite
@@ -144,25 +160,28 @@ fun GradientStyle.ambientBrush(
 
         GradientStyle.SUNSET -> Brush.linearGradient(
             colors = faded(
-                flat,
-                fidelity,
-                AccentOrange.copy(alpha = accentAlpha),
-                scheme.background,
-                AccentPink.copy(alpha = accentAlpha * 0.7f)
+                flat = flat,
+                fidelity = fidelity,
+                stops = listOf(
+                    AccentOrange.copy(alpha = accentAlpha),
+                    scheme.background,
+                    AccentPink.copy(alpha = accentAlpha * 0.7f)
+                )
             ),
             start = Offset.Zero,
             end = Offset.Infinite
         )
 
         GradientStyle.VOID -> Brush.verticalGradient(
-            faded(
-                flat,
-                fidelity,
-                scheme.tertiary.copy(alpha = accentAlpha * 0.9f),
-                scheme.background,
-                scheme.background
+            colors = faded(
+                flat = flat,
+                fidelity = fidelity,
+                stops = listOf(
+                    scheme.tertiary.copy(alpha = accentAlpha * 0.9f),
+                    scheme.background,
+                    scheme.background
+                )
             )
         )
-
     }
 }
