@@ -55,13 +55,15 @@ object WidgetRefreshScheduler {
     private var lastScheduledElapsedMs = 0L
 
     /** True while at least one instance of any family widget is on a home screen. */
-    fun hasPlacedWidgets(context: Context): Boolean = try {
-        val manager = AppWidgetManager.getInstance(context) ?: return false
-        ALL_PROVIDERS.any { providerClass ->
-            manager.getAppWidgetIds(ComponentName(context, providerClass)).isNotEmpty()
+    fun hasPlacedWidgets(context: Context): Boolean {
+        return try {
+            val manager = AppWidgetManager.getInstance(context) ?: return false
+            ALL_PROVIDERS.any { providerClass ->
+                manager.getAppWidgetIds(ComponentName(context, providerClass)).isNotEmpty()
+            }
+        } catch (_: Throwable) {
+            false
         }
-    } catch (_: Throwable) {
-        false
     }
 
     fun schedule(context: Context) {

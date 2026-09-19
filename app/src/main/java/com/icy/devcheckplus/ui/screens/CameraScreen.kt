@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.icy.devcheckplus.data.CameraDataProvider
 import com.icy.devcheckplus.data.PinnableCategory
+import com.icy.devcheckplus.model.InfoItem
 import com.icy.devcheckplus.model.InfoSection
 import com.icy.devcheckplus.ui.components.GlassCard
 import com.icy.devcheckplus.ui.components.GlassEmptyState
