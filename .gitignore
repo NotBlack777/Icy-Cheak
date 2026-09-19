@@ -35,3 +35,5 @@ google-services.json
 
 # Never ignore gradle wrapper jar
 !gradle/wrapper/gradle-wrapper.jar
+
+__pycache__/
