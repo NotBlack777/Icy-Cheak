@@ -4,10 +4,20 @@ Audited against commit `23f9938` (current `main`). This round both **fixed confi
 bugs** and **re-verified areas already correct**. The two categories are kept strictly
 separate below.
 
-Build/test verification: this sandbox has no JDK and no route to Maven/Gradle/Google
-hosts, so `./gradlew assembleDebug` + `./gradlew testDebugUnitTest` run in GitHub
-Actions (the workflow builds on `arena/**` pushes). CI run ID is recorded at the top
-once available — it is the real verification gate, not a rubber stamp.
+## Build Verification
+- **Green run: [35475267834](https://github.com/NotBlack777/Icy-Cheak/actions/runs/35475267834)**
+  on commit `0977c20` — `assembleDebug` ✓ and `testDebugUnitTest` ✓ (all suites pass:
+  PureLogicTest, DevToolDetectionTest, WidgetConsistencyTest, UpdaterLogicTest,
+  PrivilegeModeTest).
+- APK: `app/build/outputs/apk/debug/app-debug.apk` (17,293,042 bytes), verified
+  installable-shaped by the CI "Verify APK" step.
+- Signing identity unchanged (same cached debug keystore, SHA256
+  `E9:51:6F:9A:98:23:3E:D2:7C:68:B4:2A:D7:F4:24:86:33:0A:51:27:3E:F4:E6:13:76:54:27:86:BF:F5:AB:F9`),
+  so the in-app updater can still install over previous builds.
+- Note: this sandbox has no JDK and no route to Maven/Gradle/Google hosts, so the
+  Gradle commands could not run locally — GitHub Actions is the real verification
+  gate (same situation as prior PRs). Two compile/test issues were caught and fixed
+  through that gate before green.
 
 ---
 
