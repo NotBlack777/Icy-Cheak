@@ -175,16 +175,21 @@ class WidgetConsistencyTest {
         )
     }
 
+    /** XML comments are documentation — strip them so mentioning a forbidden
+     *  construct in a comment can never trip the checks below. */
+    private fun stripComments(xml: String): String =
+        xml.replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")
+
     @Test
     fun `widget layouts never use the gradient launcher foreground drawable`() {
         val layoutDir = resDir.resolve("layout")
         val widgetLayouts = layoutDir.listFiles { f -> f.name.startsWith("widget_") && f.name.endsWith(".xml") }!!
         for (layout in widgetLayouts) {
-            val content = layout.readText()
+            val content = stripComments(layout.readText())
             assertTrue(
-                "${layout.name} references ic_launcher_foreground — its aapt:attr gradient is a known " +
+                "${layout.name} references @drawable/ic_launcher_foreground — its aapt:attr gradient is a known " +
                     "'Can't load widget' cause inside RemoteViews; use ic_widget_logo instead",
-                !content.contains("ic_launcher_foreground")
+                !content.contains("@drawable/ic_launcher_foreground")
             )
         }
     }
@@ -195,14 +200,14 @@ class WidgetConsistencyTest {
         val widgetLayouts = layoutDir.listFiles { f -> f.name.startsWith("widget_") && f.name.endsWith(".xml") }!!
         val referenced = mutableSetOf<String>()
         for (layout in widgetLayouts) {
-            Regex("@drawable/([A-Za-z0-9_]+)").findAll(layout.readText()).forEach {
+            Regex("@drawable/([A-Za-z0-9_]+)").findAll(stripComments(layout.readText())).forEach {
                 referenced.add(it.groupValues[1])
             }
         }
         for (name in referenced) {
             val file = resDir.resolve("drawable/$name.xml")
             if (!file.isFile) continue // PNG / platform drawable — nothing to parse
-            val content = file.readText()
+            val content = stripComments(file.readText())
             assertTrue(
                 "Drawable $name used by a widget layout contains a <gradient>/" +
                     "<aapt:attr> element — unsafe inside RemoteViews on OEM widget hosts",
