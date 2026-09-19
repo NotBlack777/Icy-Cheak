@@ -22,8 +22,52 @@ import java.util.Collections
 
 object NetworkDataProvider {
 
+    /**
+     * The permission Android requires to report Wi-Fi identity (SSID/BSSID):
+     * fine location on API 29+, coarse location on 26–28.
+     */
+    val requiredLocationPermission: String
+        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        } else {
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        }
+
+    fun hasLocationPermission(context: Context): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, requiredLocationPermission
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Location *services* master switch — Android also blanks Wi-Fi identity
+     * when it is off, even with the permission granted.
+     */
+    fun isLocationEnabled(context: Context): Boolean = try {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+        when {
+            lm == null -> false
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> lm.isLocationEnabled
+            else -> lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) ||
+                lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)
+        }
+    } catch (_: Exception) {
+        false
+    }
+
+    /** True when Android will actually report Wi-Fi identity to this app. */
+    fun canReadWifiIdentity(context: Context): Boolean =
+        hasLocationPermission(context) && isLocationEnabled(context)
+
     suspend fun getNetworkSections(context: Context, fetchPublicIp: Boolean): List<InfoSection> = withContext(Dispatchers.IO) {
         val sections = mutableListOf<InfoSection>()
+
+        // Permission-aware Wi-Fi identity: Android blanks SSID/BSSID unless the
+        // location permission is granted AND location services are on. The state
+        // is resolved once, up front, and both items explain their own
+        // unavailability instead of showing a bare "<unknown ssid>".
+        val wifiIdentityAllowed = canReadWifiIdentity(context)
+        val locationPermissionGranted = hasLocationPermission(context)
+        val locationServicesOn = isLocationEnabled(context)
 
         // 1. Connection Overview
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -62,10 +106,39 @@ object NetworkDataProvider {
         val wifiInfo: WifiInfo? = wm.connectionInfo
 
         if (wifiInfo != null && hasWifi) {
-            val ssid = wifiInfo.ssid?.replace("\"", "") ?: "Unknown"
-            wifiItems.add(InfoItem("SSID", if (ssid == "<unknown ssid>") "Hidden / Requires Location Permission" else ssid))
-            val bssid = wifiInfo.bssid ?: "Unavailable"
-            wifiItems.add(InfoItem("BSSID (MAC)", bssid))
+            val identityExplanation = when {
+                locationPermissionGranted && !locationServicesOn ->
+                    "Location services are off — Android reports Wi-Fi identity only while they are on"
+                !locationPermissionGranted ->
+                    "Grant the Location permission (button at the top of this page) to reveal it"
+                else -> null
+            }
+            val rawSsid = wifiInfo.ssid?.replace("\"", "") ?: "Unknown"
+            wifiItems.add(
+                InfoItem(
+                    "SSID",
+                    when {
+                        rawSsid != "<unknown ssid>" -> rawSsid
+                        !locationPermissionGranted -> "Hidden by Android — Location permission not granted"
+                        !locationServicesOn -> "Hidden by Android — Location services are off"
+                        else -> "Hidden by Android"
+                    },
+                    subtitle = if (wifiIdentityAllowed) null else identityExplanation
+                )
+            )
+            val rawBssid = wifiInfo.bssid
+            wifiItems.add(
+                InfoItem(
+                    "BSSID (MAC)",
+                    when {
+                        wifiIdentityAllowed && !rawBssid.isNullOrBlank() -> rawBssid
+                        !locationPermissionGranted -> "Hidden by Android — Location permission not granted"
+                        !locationServicesOn -> "Hidden by Android — Location services are off"
+                        else -> rawBssid?.takeIf { it.isNotBlank() } ?: "Unavailable"
+                    },
+                    subtitle = if (wifiIdentityAllowed) null else identityExplanation
+                )
+            )
             wifiItems.add(InfoItem("Link Speed", "${wifiInfo.linkSpeed} ${WifiInfo.LINK_SPEED_UNITS}"))
             wifiItems.add(InfoItem("Signal Strength (RSSI)", "${wifiInfo.rssi} dBm"))
             wifiItems.add(InfoItem("Frequency Band", "${wifiInfo.frequency} MHz (${getWifiBand(wifiInfo.frequency)})"))
@@ -93,6 +166,15 @@ object NetworkDataProvider {
             else -> "Not Ready"
         }
         cellItems.add(InfoItem("SIM State", simStateText))
+        // Least-permission note: every value in this section is readable without
+        // READ_PHONE_STATE — the app deliberately never reads IMEI/serial numbers.
+        cellItems.add(
+            InfoItem(
+                "Phone Permission",
+                "Not needed for this data",
+                subtitle = "These carrier/SIM fields are public per SIM. Icy Cheak does not read device identifiers (IMEI/serial), so no phone-state permission is requested."
+            )
+        )
         sections.add(InfoSection("Cellular Network", cellItems))
 
         // 4. IP Addresses & DNS

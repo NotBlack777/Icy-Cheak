@@ -41,13 +41,39 @@ data class WidgetSnapshot(
 /**
  * Cheap, unprivileged telemetry for home screen widgets.
  * All reads are local — no shell, no root/Shizuku — so 60s cadence is affordable.
+ *
+ * FIXED — one read per refresh cycle:
+ * Every placed widget used to trigger its own [read], so six widget types meant
+ * six identical CPU/battery/RAM/storage passes per refresh. [read] now serves a
+ * very short-lived cached snapshot (default 1 s), which collapses bursts — the
+ * system delivering `APPWIDGET_UPDATE` to all six providers at once, or the
+ * refresh alarm plus a placement event landing together — into exactly one
+ * telemetry pass. The cache is deliberately tiny: at the 60 s refresh cadence it
+ * never serves stale data in practice, and the executor that calls this runs
+ * off the receiver thread (see [WidgetWorkExecutor]).
  */
 object WidgetMetrics {
 
     private const val CORE_FREQ_PATH = "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq"
     private const val MB = 1024L * 1024L
 
-    fun read(context: Context): WidgetSnapshot {
+    private val cacheLock = Any()
+    private var cachedSnapshot: WidgetSnapshot? = null
+    private var cachedAtElapsedMs = 0L
+
+    fun read(context: Context, maxAgeMs: Long = 1_000L): WidgetSnapshot {
+        synchronized(cacheLock) {
+            val cached = cachedSnapshot
+            val age = android.os.SystemClock.elapsedRealtime() - cachedAtElapsedMs
+            if (cached != null && age in 0..maxAgeMs) return cached
+            val fresh = readUncached(context)
+            cachedSnapshot = fresh
+            cachedAtElapsedMs = android.os.SystemClock.elapsedRealtime()
+            return fresh
+        }
+    }
+
+    private fun readUncached(context: Context): WidgetSnapshot {
         val (batteryPercent, charging, tempC, voltageMv, health) = readBattery(context)
         val (usedMb, totalMb) = readRam(context)
         val cores = Runtime.getRuntime().availableProcessors().coerceIn(1, 32)

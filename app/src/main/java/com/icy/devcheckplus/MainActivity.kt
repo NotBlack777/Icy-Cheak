@@ -34,6 +34,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -75,6 +78,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -139,6 +143,38 @@ class MainActivity : ComponentActivity() {
         // listened to until the user switches it on.
         FrameMetricsMonitor.attach(window)
         setContent {
+            // FIXED — DataStore cold start: UserPreferencesStore now loads its
+            // initial values asynchronously (no more runBlocking in
+            // Application.onCreate). Until the read lands, the app must not
+            // compose with default theming (that would flash default→saved) —
+            // so we hold one flat frame painted with the *synchronously known*
+            // theme mode's background colour instead. The user sees a seamless
+            // continuation of the splash/background, then the fully themed UI.
+            // The store's hard cap guarantees this can never hang forever.
+            val prefsReady by UserPreferencesStore.ready
+                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.ready.value)
+
+            if (!prefsReady) {
+                // Appearance prefs mirrored from SharedPreferences in
+                // AppSettingsStore.init() — available synchronously on cold start.
+                val pendingThemeMode by AppSettingsStore.themeMode
+                    .collectAsStateWithLifecycle(initialValue = AppSettingsStore.themeMode.value)
+                val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+                val pendingBackground = when (pendingThemeMode) {
+                    com.icy.devcheckplus.ui.theme.ThemeMode.LIGHT ->
+                        com.icy.devcheckplus.ui.theme.LightBackground
+                    com.icy.devcheckplus.ui.theme.ThemeMode.OLED ->
+                        com.icy.devcheckplus.ui.theme.OledBackground
+                    com.icy.devcheckplus.ui.theme.ThemeMode.DARK ->
+                        com.icy.devcheckplus.ui.theme.DeepDarkBackground
+                    com.icy.devcheckplus.ui.theme.ThemeMode.SYSTEM ->
+                        if (systemDark) com.icy.devcheckplus.ui.theme.DeepDarkBackground
+                        else com.icy.devcheckplus.ui.theme.LightBackground
+                }
+                Box(modifier = Modifier.fillMaxSize().background(pendingBackground))
+                return@setContent
+            }
+
             // Appearance prefs are mirrored into StateFlows by AppSettingsStore, so a
             // theme change in Settings is applied app-wide on the next frame.
             // Lifecycle-aware collection: nothing keeps observing while backgrounded.
@@ -150,18 +186,27 @@ class MainActivity : ComponentActivity() {
             // Accent / gradient / ambient animation come from DataStore. Each is
             // its own flow, so e.g. changing the poll interval does not invalidate
             // the theme wrapper (and therefore the whole app).
+            //
+            // Cold-start determinism: the initial values are seeded from the
+            // single `preferences` snapshot flow, which [UserPreferencesStore.init]
+            // updates synchronously right before flipping `ready`. Observing
+            // `prefsReady == true` (volatile write after the snapshot write)
+            // guarantees the snapshot below already holds the *stored* values, so
+            // the first themed frame can never render defaults; the per-option
+            // flows then emit the same values and StateFlow dedupes them away.
+            val prefsSeed = UserPreferencesStore.preferences.value
             val accent by UserPreferencesStore.accent
-                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.accent.value)
+                .collectAsStateWithLifecycle(initialValue = prefsSeed.accent)
             val gradient by UserPreferencesStore.gradient
-                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.gradient.value)
+                .collectAsStateWithLifecycle(initialValue = prefsSeed.gradient)
             // Only read while the gradient style is Custom, so saving or switching a
             // preset recomposes the theme wrapper and nothing else.
             val customGradient by UserPreferencesStore.activeCustomGradient
-                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.activeCustomGradient.value)
+                .collectAsStateWithLifecycle(initialValue = prefsSeed.activeCustomGradient)
             val backgroundAnimation by UserPreferencesStore.backgroundAnimation
-                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.backgroundAnimation.value)
+                .collectAsStateWithLifecycle(initialValue = prefsSeed.backgroundAnimation)
             val backgroundOverride by UserPreferencesStore.backgroundAnimationOverride
-                .collectAsStateWithLifecycle(initialValue = UserPreferencesStore.backgroundAnimationOverride.value)
+                .collectAsStateWithLifecycle(initialValue = prefsSeed.backgroundAnimationOverride)
 
             DevCheckPlusTheme(
                 themeMode = themeMode,
@@ -278,11 +323,40 @@ fun MainDashboardScreen(
     val search = remember { SearchState() }
     val hapticTick = rememberHapticTick()
 
+    // CRITICAL FIX — drawer scrolling:
+    // The drawer used to lay every NavCategory out in a plain Column, which (with
+    // 18 items) overflowed a phone-height drawer and could not be scrolled at all.
+    // The navigation items now live in a LazyColumn that owns exactly the space
+    // between the header and the footer (Modifier.weight(1f)), so it has correct
+    // height constraints: drag, fling and fast scrolling all behave like any other
+    // list, while the header stays pinned on top and the footer stays reachable
+    // at the bottom.
+    val navCategories = remember { NavCategory.values().toList() }
+    val drawerListState = rememberLazyListState()
+
+    // Keep the selected destination visible: if navigation changes programmatically
+    // (privilege banner → Settings, console shortcut → Console) while the drawer is
+    // scrolled elsewhere, bring the highlighted row into view. A visible item never
+    // triggers a scroll, so user-driven scrolling is never fought.
+    LaunchedEffect(currentCategory) {
+        val index = navCategories.indexOf(currentCategory)
+        if (index >= 0 && drawerListState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+            runCatching { drawerListState.animateScrollToItem(index) }
+        }
+    }
+
+    // FIXED — hardcoded 300 dp width: on very narrow screens (small phones, odd
+    // DPI, split-screen) 300 dp could nearly fill or overflow the window. The
+    // drawer now scales with the window (85 %, capped at the original 300 dp) and
+    // keeps a sane minimum. Landscape / tablets still get the full 300 dp.
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val drawerWidth = minOf(300.dp, (screenWidthDp * 0.85f).dp).coerceAtLeast(240.dp)
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
-                modifier = Modifier.width(300.dp),
+                modifier = Modifier.width(drawerWidth),
                 // Transparent on purpose: the drawer paints the same frosted glass
                 // as every other elevated surface, with the app's ambient layer
                 // showing through its rounded edge, instead of a flat surface fill.
@@ -294,7 +368,7 @@ fun MainDashboardScreen(
                     shape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) {
-                // Drawer Header
+                // Drawer Header — fixed at the top, never scrolls away.
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -315,39 +389,53 @@ fun MainDashboardScreen(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                NavCategory.values().forEach { category ->
-                    val isSelected = category == currentCategory
-                    NavigationDrawerItem(
-                        icon = {
-                            Icon(
-                                imageVector = category.icon,
-                                contentDescription = null,
-                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                // Vertically scrollable navigation area — owns all remaining height
+                // between header and footer. LazyColumn gives drag, fling and fast
+                // scrolling for free and recycles off-screen rows.
+                LazyColumn(
+                    state = drawerListState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentPadding = PaddingValues(top = 10.dp, bottom = 10.dp)
+                ) {
+                    items(
+                        items = navCategories,
+                        key = { it.name },
+                        contentType = { "nav-item" }
+                    ) { category ->
+                        val isSelected = category == currentCategory
+                        NavigationDrawerItem(
+                            icon = {
+                                Icon(
+                                    imageVector = category.icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = category.title,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            selected = isSelected,
+                            onClick = {
+                                hapticTick()
+                                currentCategory = category
+                                scope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                            colors = NavigationDrawerItemDefaults.colors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                             )
-                        },
-                        label = {
-                            Text(
-                                text = category.title,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        },
-                        selected = isSelected,
-                        onClick = {
-                            hapticTick()
-                            currentCategory = category
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                        colors = NavigationDrawerItemDefaults.colors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                         )
-                    )
+                    }
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
+                // Footer — fixed below the scrollable area so it can never block
+                // (or be scrolled away from) the navigation list.
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 Text(
                     text = "Root & Shizuku Powered • Open Source",
@@ -391,7 +479,14 @@ fun MainDashboardScreen(
                     SearchHeader(
                         search = search,
                         currentCategory = currentCategory,
-                        onOpenDrawer = { scope.launch { drawerState.open() } },
+                        // FIXED: guard against accidental double-open — a tap while the
+                        // drawer is already open or animating open is a no-op instead of
+                        // restarting the animation (which made the drawer feel janky).
+                        onOpenDrawer = {
+                            if (drawerState.targetValue != DrawerValue.Open) {
+                                scope.launch { drawerState.open() }
+                            }
+                        },
                         onStatusClick = { currentCategory = NavCategory.SETTINGS },
                         onOpenConsole = {
                             hapticTick()

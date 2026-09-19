@@ -1,28 +1,86 @@
 package com.icy.devcheckplus.data
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import com.icy.devcheckplus.model.InfoItem
 import com.icy.devcheckplus.model.InfoSection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * Camera inspection — FIXED permission/availability handling.
+ *
+ * Technically correct Android behaviour this now relies on:
+ *  - Reading camera *metadata* via `CameraManager.getCameraCharacteristics`
+ *    requires NO runtime permission and never opens or powers the camera.
+ *    (`openCamera` is the permission-gated call — this provider never calls it.)
+ *  - Since API 29 a small set of metadata keys (mostly depth/lens-correction
+ *    values, listed by `CameraCharacteristics.getKeysNeedingPermission()`) are
+ *    redacted for apps without CAMERA permission: `get` returns null for them.
+ *
+ * So the least-permission flow is: read everything without permission, and if
+ * Android redacted keys, tell the user exactly that and offer an explicit
+ * [android.Manifest.permission.CAMERA] request to unlock the few hidden fields.
+ * A device that nevertheless throws SecurityException (OEM quirk) is surfaced
+ * as a clear "Camera permission required" state instead of a fake camera error.
+ */
 object CameraDataProvider {
-    suspend fun getCameraSections(context: Context): List<InfoSection> = withContext(Dispatchers.IO) {
+
+    sealed interface CameraInfoResult {
+        /** Metadata read successfully. [redactedKeyCount] > 0 means Android hid
+         *  that many fields because CAMERA is not granted (API 29+). */
+        data class Success(
+            val sections: List<InfoSection>,
+            val redactedKeyCount: Int
+        ) : CameraInfoResult
+
+        /** A SecurityException came back — the device gates metadata behind CAMERA. */
+        data class PermissionRequired(val reason: String) : CameraInfoResult
+
+        /** A real failure (no camera service, CameraAccessException, …). */
+        data class Failure(val message: String) : CameraInfoResult
+    }
+
+    fun hasCameraPermission(context: Context): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+
+    suspend fun getCameraInfo(context: Context): CameraInfoResult = withContext(Dispatchers.IO) {
         val sections = mutableListOf<InfoSection>()
         val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
 
         if (cameraManager == null) {
-            sections.add(InfoSection("Camera", listOf(InfoItem("Camera Service", "Unavailable"))))
-            return@withContext sections
+            return@withContext CameraInfoResult.Failure("No camera service is available on this device.")
         }
+
+        var redactedKeys = 0
 
         try {
             val cameraIds = cameraManager.cameraIdList
             val overviewItems = mutableListOf<InfoItem>()
             overviewItems.add(InfoItem("Camera Count", "${cameraIds.size} cameras"))
-            overviewItems.add(InfoItem("Front/Back", "${cameraIds.size} total"))
+
+            // Count front/back/external properly instead of repeating the total.
+            var front = 0
+            var back = 0
+            var external = 0
+            cameraIds.forEach { id ->
+                runCatching {
+                    cameraManager.getCameraCharacteristics(id)
+                        .get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+                }.getOrNull()?.let { facing ->
+                    when (facing) {
+                        android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT -> front++
+                        android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK -> back++
+                        else -> external++
+                    }
+                }
+            }
+            overviewItems.add(InfoItem("Front / Back / External", "$front / $back / $external"))
             sections.add(InfoSection("Overview", overviewItems))
 
             cameraIds.forEach { id ->
@@ -91,17 +149,33 @@ object CameraDataProvider {
                     val stabilization = characteristics.get(android.hardware.camera2.CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION)
                     items.add(InfoItem("OIS", stabilization?.joinToString(", ") { oisToString(it) } ?: "Unknown"))
 
+                    // API 29+: keys Android redacts without the CAMERA permission.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        redactedKeys += characteristics.keysNeedingPermission.size
+                    }
+
                     sections.add(InfoSection("Camera $id ($facingStr)", items))
+                } catch (e: SecurityException) {
+                    // This specific camera's metadata is permission-gated.
+                    sections.add(
+                        InfoSection(
+                            "Camera $id",
+                            listOf(InfoItem("Details", "Requires camera permission", subtitle = e.message))
+                        )
+                    )
+                    redactedKeys += 1
                 } catch (e: Exception) {
                     sections.add(InfoSection("Camera $id", listOf(InfoItem("Error", e.message ?: "Failed to read"))))
                 }
             }
 
+            CameraInfoResult.Success(sections, redactedKeys)
+        } catch (e: SecurityException) {
+            // The whole enumeration is gated on this device — request permission.
+            CameraInfoResult.PermissionRequired(e.message ?: "The device requires the camera permission to list cameras.")
         } catch (e: Exception) {
-            sections.add(InfoSection("Camera", listOf(InfoItem("Error", e.message ?: "Failed to list cameras"))))
+            CameraInfoResult.Failure(e.message ?: "Failed to list cameras")
         }
-
-        sections
     }
 
     private fun afModeToString(mode: Int): String = when (mode) {

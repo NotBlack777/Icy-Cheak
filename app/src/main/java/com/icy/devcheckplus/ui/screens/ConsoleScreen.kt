@@ -198,8 +198,8 @@ fun ConsoleScreen(modifier: Modifier = Modifier) {
             if (result.timedOut) {
                 batch.add(
                     LineKind.ERROR to
-                        ("Command timed out after ${COMMAND_TIMEOUT_MS / 1000} s — it may still be running in the shell, " +
-                            "but the UI has been released.")
+                        ("Command timed out after ${COMMAND_TIMEOUT_MS / 1000} s — the watchdog destroyed " +
+                            "this command's process (and only this one) and released the UI.")
                 )
             } else {
                 batch.add(LineKind.INFO to "[${result.executionSource}] exit=${result.exitCode}")

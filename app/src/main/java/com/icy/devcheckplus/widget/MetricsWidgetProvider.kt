@@ -3,6 +3,7 @@ package com.icy.devcheckplus.widget
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -16,59 +17,114 @@ import java.util.Locale
 /**
  * Premium redesigned widget family — Quick Stats (default) + additional types.
  * All widgets share the same refresh scheduler and telemetry source.
+ *
+ * FIXED — lifecycle + performance:
+ *  - telemetry is read ONCE per refresh cycle (see [WidgetMetrics.read]'s
+ *    short-lived snapshot cache) and shared by every placed widget, instead of
+ *    six providers each performing identical battery/RAM/CPU/storage reads;
+ *  - the read now happens on [WidgetWorkExecutor]'s worker thread, never on the
+ *    receiver (main) thread — [goAsync] keeps the broadcast alive until the
+ *    render finishes and the PendingResult is released;
+ *  - the refresh alarm exists only while at least one widget of the family is
+ *    placed: [onUpdate] re-checks placement, [onDeleted] cancels when the last
+ *    widget goes, [onDisabled] cancels unconditionally.
  */
-class MetricsWidgetProvider : AppWidgetProvider() {
+abstract class BaseSnapshotWidgetProvider : AppWidgetProvider() {
+
+    /** Renders one widget instance for the (shared) [snapshot]. */
+    abstract fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews
 
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
+        if (appWidgetIds.isEmpty()) return
         WidgetRefreshScheduler.schedule(context)
-        val snapshot = WidgetMetrics.read(context)
-        appWidgetIds.forEach { id ->
-            appWidgetManager.updateAppWidget(id, buildViews(context, snapshot))
+        val pending = goAsync()
+        WidgetWorkExecutor.post(pending) {
+            val manager = AppWidgetManager.getInstance(context) ?: return@post
+            // ONE snapshot for every id of this provider (and, via the 1 s cache,
+            // for every other provider firing in the same burst).
+            val snapshot = WidgetMetrics.read(context)
+            appWidgetIds.forEach { id ->
+                try {
+                    manager.updateAppWidget(id, buildViews(context, snapshot))
+                } catch (_: Throwable) {}
+            }
         }
     }
 
-    override fun onEnabled(context: Context) {
-        WidgetRefreshScheduler.schedule(context)
+    override fun onReceive(context: Context, intent: Intent) {
+        val isRefresh = intent.action == WidgetRefreshScheduler.ACTION_REFRESH
+        val pending: BroadcastReceiver.PendingResult? = if (isRefresh) goAsync() else null
+        try {
+            super.onReceive(context, intent)
+            if (isRefresh) {
+                WidgetWorkExecutor.post(pending) { MetricsWidgetProvider.refreshAllBlocking(context) }
+            }
+        } catch (t: Throwable) {
+            // Never leave a goAsync() result dangling.
+            try {
+                pending?.finish()
+            } catch (_: Throwable) {}
+            if (t is RuntimeException) throw t
+        }
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        if (placedWidgetCount(context) == 0) WidgetRefreshScheduler.cancel(context)
+        // Cancel the shared alarm the moment the family's last widget is gone.
+        if (!WidgetRefreshScheduler.hasPlacedWidgets(context)) {
+            WidgetRefreshScheduler.cancel(context)
+        }
     }
 
     override fun onDisabled(context: Context) {
         WidgetRefreshScheduler.cancel(context)
     }
+}
 
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) {
-            refreshAll(context)
-        }
-    }
+class MetricsWidgetProvider : BaseSnapshotWidgetProvider() {
+
+    override fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews =
+        Companion.buildViews(context, snapshot)
 
     companion object {
 
+        /**
+         * Fire-and-forget refresh of every placed widget of the family. Safe to
+         * call from any thread (including Application.onCreate): the telemetry
+         * pass runs on the widget worker thread.
+         */
         fun refreshAll(context: Context) {
+            WidgetWorkExecutor.post(pendingResult = null) { refreshAllBlocking(context.applicationContext) }
+        }
+
+        /**
+         * The actual refresh cycle. FIXED: reads [WidgetMetrics] ONCE and paints
+         * every provider from that snapshot (the old loop re-read telemetry once
+         * per provider class), and collapses duplicate REFRESH broadcasts so a
+         * burst of widget events costs a single cycle.
+         */
+        fun refreshAllBlocking(context: Context) {
             try {
+                if (WidgetWorkExecutor.shouldSkipDuplicateRefresh()) return
+                WidgetWorkExecutor.markRefreshStarted()
+
                 val manager = AppWidgetManager.getInstance(context) ?: return
-                val allProviders = listOf(
-                    MetricsWidgetProvider::class.java,
-                    CompactWidgetProvider::class.java,
-                    BatteryWidgetProvider::class.java,
-                    DeviceOverviewWidgetProvider::class.java,
-                    PerformanceWidgetProvider::class.java,
-                    MinimalWidgetProvider::class.java
-                )
+                if (!WidgetRefreshScheduler.hasPlacedWidgets(context)) {
+                    WidgetRefreshScheduler.cancel(context)
+                    return
+                }
+
+                // Single telemetry read for the whole cycle.
+                val snapshot = WidgetMetrics.read(context)
+
                 var anyPlaced = false
-                allProviders.forEach { providerClass ->
+                WidgetRefreshScheduler.ALL_PROVIDERS.forEach { providerClass ->
                     val ids = manager.getAppWidgetIds(ComponentName(context, providerClass))
                     if (ids.isNotEmpty()) {
                         anyPlaced = true
-                        val snapshot = WidgetMetrics.read(context)
                         ids.forEach { id ->
                             val views = when (providerClass) {
                                 CompactWidgetProvider::class.java -> CompactWidgetProvider.buildViews(context, snapshot)
@@ -78,7 +134,9 @@ class MetricsWidgetProvider : AppWidgetProvider() {
                                 MinimalWidgetProvider::class.java -> MinimalWidgetProvider.buildViews(context, snapshot)
                                 else -> buildViews(context, snapshot)
                             }
-                            manager.updateAppWidget(id, views)
+                            try {
+                                manager.updateAppWidget(id, views)
+                            } catch (_: Throwable) {}
                         }
                     }
                 }
@@ -87,23 +145,6 @@ class MetricsWidgetProvider : AppWidgetProvider() {
                 }
             } catch (_: Throwable) {
             }
-        }
-
-        private fun placedWidgetCount(context: Context): Int = try {
-            val manager = AppWidgetManager.getInstance(context)
-            val providers = listOf(
-                MetricsWidgetProvider::class.java,
-                CompactWidgetProvider::class.java,
-                BatteryWidgetProvider::class.java,
-                DeviceOverviewWidgetProvider::class.java,
-                PerformanceWidgetProvider::class.java,
-                MinimalWidgetProvider::class.java
-            )
-            providers.sumOf { cls ->
-                manager?.getAppWidgetIds(ComponentName(context, cls))?.size ?: 0
-            }
-        } catch (_: Throwable) {
-            0
         }
 
         fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
@@ -184,18 +225,14 @@ class MetricsWidgetProvider : AppWidgetProvider() {
     }
 }
 
-// Additional widget providers for family
+// Additional widget providers for family.
+// Lifecycle (scheduling/cancel/off-thread refresh) is inherited from
+// [BaseSnapshotWidgetProvider]; each subclass only renders its own layout.
 
-class CompactWidgetProvider : AppWidgetProvider() {
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        WidgetRefreshScheduler.schedule(context)
-        val snapshot = WidgetMetrics.read(context)
-        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
-    }
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
-    }
+class CompactWidgetProvider : BaseSnapshotWidgetProvider() {
+    override fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews =
+        Companion.buildViews(context, snapshot)
+
     companion object {
         fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_compact)
@@ -209,16 +246,10 @@ class CompactWidgetProvider : AppWidgetProvider() {
     }
 }
 
-class BatteryWidgetProvider : AppWidgetProvider() {
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        WidgetRefreshScheduler.schedule(context)
-        val snapshot = WidgetMetrics.read(context)
-        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
-    }
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
-    }
+class BatteryWidgetProvider : BaseSnapshotWidgetProvider() {
+    override fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews =
+        Companion.buildViews(context, snapshot)
+
     companion object {
         fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_battery)
@@ -234,16 +265,10 @@ class BatteryWidgetProvider : AppWidgetProvider() {
     }
 }
 
-class DeviceOverviewWidgetProvider : AppWidgetProvider() {
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        WidgetRefreshScheduler.schedule(context)
-        val snapshot = WidgetMetrics.read(context)
-        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
-    }
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
-    }
+class DeviceOverviewWidgetProvider : BaseSnapshotWidgetProvider() {
+    override fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews =
+        Companion.buildViews(context, snapshot)
+
     companion object {
         fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_device_overview)
@@ -258,16 +283,10 @@ class DeviceOverviewWidgetProvider : AppWidgetProvider() {
     }
 }
 
-class PerformanceWidgetProvider : AppWidgetProvider() {
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        WidgetRefreshScheduler.schedule(context)
-        val snapshot = WidgetMetrics.read(context)
-        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
-    }
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
-    }
+class PerformanceWidgetProvider : BaseSnapshotWidgetProvider() {
+    override fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews =
+        Companion.buildViews(context, snapshot)
+
     companion object {
         fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_performance)
@@ -282,16 +301,10 @@ class PerformanceWidgetProvider : AppWidgetProvider() {
     }
 }
 
-class MinimalWidgetProvider : AppWidgetProvider() {
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        WidgetRefreshScheduler.schedule(context)
-        val snapshot = WidgetMetrics.read(context)
-        appWidgetIds.forEach { id -> appWidgetManager.updateAppWidget(id, buildViews(context, snapshot)) }
-    }
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == WidgetRefreshScheduler.ACTION_REFRESH) MetricsWidgetProvider.refreshAll(context)
-    }
+class MinimalWidgetProvider : BaseSnapshotWidgetProvider() {
+    override fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews =
+        Companion.buildViews(context, snapshot)
+
     companion object {
         fun buildViews(context: Context, snapshot: WidgetSnapshot): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_minimal)
