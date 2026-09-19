@@ -43,9 +43,12 @@ internal object WidgetWorkExecutor {
             executor.execute {
                 try {
                     block()
-                } catch (_: Throwable) {
+                } catch (t: Throwable) {
                     // A widget render must never crash the hosting process; the
-                    // next scheduled refresh simply repaints again.
+                    // next scheduled refresh simply repaints again. But it is
+                    // logged — silent widget death is exactly what made
+                    // "Can't load widget" undebuggable.
+                    WidgetLog.schedulerNote("widget work aborted: ${t.javaClass.simpleName}: ${t.message}")
                 } finally {
                     try {
                         pendingResult?.finish()

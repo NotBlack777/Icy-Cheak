@@ -27,4 +27,7 @@
 
     <string name="widget_network_name">Icy Cheak Network</string>
     <string name="widget_network_description">Network type, Wi-Fi and connection status.</string>
+
+    <!-- Shown only when a widget's full render fails; tapping opens the app. -->
+    <string name="widget_fallback_message">Couldn\'t refresh — tap to open</string>
 </resources>

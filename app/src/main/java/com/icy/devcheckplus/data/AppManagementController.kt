@@ -64,7 +64,10 @@ object AppManagementController {
             if (result.timedOut) {
                 AppActionResult.Failure("Force-stop timed out — the shell did not answer in time.")
             } else if (result.isSuccess) {
-                AppActionResult.Success("$packageName stopped.")
+                // Known platform caveat: `am force-stop` exits 0 even when the
+                // target wasn't running, so phrase this as "the stop was sent"
+                // rather than claiming the app was definitely running before.
+                AppActionResult.Success("Force-stop sent to $packageName (Android reports success even if it was already idle).")
             } else {
                 val detail = result.combined().ifBlank { "the shell reported a failure." }
                 AppActionResult.Failure("Force-stop failed: $detail")

@@ -259,7 +259,15 @@ object PrivilegeManager {
         }
     }
 
-    private fun resolveActiveMode(rootGranted: Boolean, shizukuGranted: Boolean, pref: PrivilegeMode): PrivilegeMode {
+    /**
+     * Visible for testing — the mode-selection contract:
+     *  - AUTO tries Root first, then Shizuku, then none (never Standard here —
+     *    Standard is a per-command fallback inside [executeCommandInternal]);
+     *  - an explicit ROOT / SHIZUKU preference NEVER silently becomes something
+     *    else: without its grant the mode is NONE, not a downgrade;
+     *  - NONE stays NONE.
+     */
+    internal fun resolveActiveMode(rootGranted: Boolean, shizukuGranted: Boolean, pref: PrivilegeMode): PrivilegeMode {
         return when (pref) {
             PrivilegeMode.ROOT -> if (rootGranted) PrivilegeMode.ROOT else PrivilegeMode.NONE
             PrivilegeMode.SHIZUKU -> if (shizukuGranted) PrivilegeMode.SHIZUKU else PrivilegeMode.NONE

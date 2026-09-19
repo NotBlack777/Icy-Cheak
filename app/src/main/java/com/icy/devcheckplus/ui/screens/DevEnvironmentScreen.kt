@@ -243,7 +243,7 @@ private fun HeaderCard(
                 Text(
                     text = when {
                         loading -> "Probing the shell for installed toolchains…"
-                        scanCount == null -> "12 tools probed from the device shell"
+                        scanCount == null -> "${DevTool.values().size} tools probed from the device shell"
                         lastScanned != null ->
                             "$scanCount of ${DevTool.values().size} tools found • scanned $lastScanned"
                         else -> "$scanCount of ${DevTool.values().size} tools found"
@@ -355,9 +355,13 @@ private fun noPrivilegeState(
 @Composable
 private fun ToolCard(result: DevToolResult) {
     val scheme = MaterialTheme.colorScheme
+    // Indigo for "installed somewhere else" states: the tool exists, but the
+    // currently answering shell cannot run it as-is — a distinct, honest state.
     val meterColor = when {
         result.timedOut -> AccentOrange
-        result.installed -> AccentGreen
+        result.error != null -> AccentOrange
+        result.installed && result.directlyRunnable -> AccentGreen
+        result.installed -> AccentOrange
         else -> scheme.onSurfaceVariant
     }
     GlassCard(
@@ -389,8 +393,18 @@ private fun ToolCard(result: DevToolResult) {
                     fontWeight = FontWeight.SemiBold,
                     color = scheme.onSurface
                 )
+                // Status line — the distinct environment-aware verdict.
+                Text(
+                    text = result.statusLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = meterColor,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                // Version string, when one was actually produced.
                 val version = result.version
-                if (result.installed && version != null) {
+                if (!version.isNullOrBlank()) {
                     Text(
                         text = version,
                         style = MaterialTheme.typography.bodySmall,
@@ -400,31 +414,40 @@ private fun ToolCard(result: DevToolResult) {
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (!result.path.isNullOrBlank()) {
-                        Text(
-                            text = result.path,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = scheme.onSurfaceVariant,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                } else {
-                    Text(
-                        text = if (result.timedOut) "Probe timed out" else "Not installed",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = meterColor,
-                        fontWeight = if (result.timedOut) FontWeight.Medium else FontWeight.Normal
-                    )
                 }
-                if (!result.source.isNullOrBlank() && result.source != "Standard (Non-privileged)") {
+                // Resolved executable / module path.
+                if (!result.path.isNullOrBlank()) {
                     Text(
-                        text = result.source,
+                        text = result.path,
                         style = MaterialTheme.typography.labelSmall,
                         color = scheme.onSurfaceVariant,
-                        fontSize = 10.sp
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                // Environment / runnability detail ("Source: … • directly runnable").
+                val envLine = result.environmentLine
+                if (!envLine.isNullOrBlank()) {
+                    Text(
+                        text = envLine,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                // A probe that errored should say so, not masquerade as "not installed".
+                if (!result.error.isNullOrBlank()) {
+                    Text(
+                        text = result.error,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -450,9 +473,11 @@ private fun ToolCard(result: DevToolResult) {
 @Composable
 private fun FooterNote() {
     Text(
-        text = "One-shot manual scan — nothing polls in the background. Version strings are " +
-            "whatever the tool prints; \"Not installed\" simply means its version command " +
-            "returned nothing.",
+        text = "One-shot manual scan — nothing polls in the background. Each tool is tested " +
+            "on the current PATH, in Termux, in ~/.local/bin, in Python venvs and proot " +
+            "rootfs installs, and as a python -m module, so \"Not installed\" means none of " +
+            "those forms found it. \"Not directly runnable\" marks tools that live in another " +
+            "environment (e.g. an Ubuntu proot) than the shell answering this scan.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
@@ -468,6 +493,7 @@ private fun iconFor(kind: DevToolKind): ImageVector = when (kind) {
     DevToolKind.VCS -> Icons.Default.Terminal
     DevToolKind.CONTAINER -> Icons.Default.CloudOff
     DevToolKind.TOOLCHAIN -> Icons.Default.Terminal
+    DevToolKind.PYTHON_TOOLING -> Icons.Default.Terminal
 }
 
 private fun iconTint(kind: DevToolKind, scheme: ColorScheme): Color = when (kind) {
@@ -477,4 +503,5 @@ private fun iconTint(kind: DevToolKind, scheme: ColorScheme): Color = when (kind
     DevToolKind.VCS -> AccentOrange
     DevToolKind.CONTAINER -> scheme.secondary
     DevToolKind.TOOLCHAIN -> scheme.primary
+    DevToolKind.PYTHON_TOOLING -> scheme.primary
 }
