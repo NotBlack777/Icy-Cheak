@@ -167,25 +167,7 @@ jobs:
       - name: Publish unit test failures
         if: failure()
         shell: bash
-        run: |
-          shopt -s nullglob
-          FILES=(app/build/test-results/testDebugUnitTest/TEST-*.xml)
-          if [ ${#FILES[@]} -eq 0 ]; then
-            echo "::error title=Unit tests::no test-result XML found — the tests may never have run (check test.log)"
-            exit 0
-          fi
-          for f in "${FILES[@]}"; do
-            python3 - "$f" <<'EOF'
-          import sys, xml.etree.ElementTree as ET
-          tree = ET.parse(sys.argv[1])
-          for case in tree.getroot().iter('testcase'):
-              for fail in list(case.iter('failure')) + list(case.iter('error')):
-                  cls = case.get('classname', '?')
-                  name = case.get('name', '?')
-                  msg = (fail.get('message') or 'no message').replace('\n', ' ').replace('\r', ' ')[:400]
-                  print(f"::error title=Test failed::{cls} > {name} — {msg}")
-          EOF
-          done
+        run: python3 .github/scripts/report_test_failures.py
 
       - name: Upload unit test log
         if: failure()

@@ -30,21 +30,32 @@ class WidgetConsistencyTest {
         @BeforeClass
         @JvmStatic
         fun locateProjectFiles() {
-            // Unit tests run with the module dir as CWD; walk up defensively.
-            var dir = File(".").absoluteFile
-            var found: File? = null
-            repeat(4) {
+            // Unit tests run with the module dir (`app/`) as CWD; walk up a few
+            // levels defensively in case Gradle is invoked from the repo root.
+            var dir: File? = File(".").absoluteFile
+            var manifestFile: File? = null
+            var hops = 0
+            while (dir != null && hops < 5) {
                 val candidate = File(dir, "src/main/AndroidManifest.xml")
                 if (candidate.isFile) {
-                    found = candidate
-                    return@repeat
+                    manifestFile = candidate
+                    break
                 }
-                dir = dir.parentFile ?: return@repeat
+                // Also handle standing at the repository root.
+                val fromRoot = File(dir, "app/src/main/AndroidManifest.xml")
+                if (fromRoot.isFile) {
+                    manifestFile = fromRoot
+                    break
+                }
+                dir = dir.parentFile
+                hops++
             }
-            val manifestFile = found ?: File("app/src/main/AndroidManifest.xml").takeIf { it.isFile }
-            ?: throw IllegalStateException("Cannot locate AndroidManifest.xml from ${File(".").absolutePath}")
+            requireNotNull(manifestFile) {
+                "Cannot locate AndroidManifest.xml from ${File(".").absolutePath}"
+            }
             manifest = manifestFile.readText()
-            resDir = manifestFile.parentFile!!.parentFile!!.resolve("res")
+            // The manifest lives in app/src/main/, and res/ is its sibling.
+            resDir = manifestFile.parentFile!!.resolve("res")
         }
     }
 
