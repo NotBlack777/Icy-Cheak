@@ -567,17 +567,18 @@ object DevEnvironmentDataProvider {
                     executionSource = executionSource
                 )
                 "proot" -> {
-                    val distro = report.proootDistro
+                    val distro = report.prootDistro
+                    val distroLabel = if (distro.isNullOrBlank()) {
+                        null
+                    } else {
+                        distro.substring(0, 1).uppercase() + distro.substring(1)
+                    }
                     DevToolResult(
                         tool = tool,
                         status = ToolStatus.PROOT,
                         version = null,
                         path = hit.path,
-                        environment = if (distro != null) {
-                            "${distro.replaceFirstChar { c -> c.uppercase() }} proot"
-                        } else {
-                            "Ubuntu / proot"
-                        },
+                        environment = if (distroLabel != null) "$distroLabel proot" else "Ubuntu / proot",
                         directlyRunnable = false,
                         executionSource = executionSource
                     )
