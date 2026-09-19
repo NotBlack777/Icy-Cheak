@@ -148,6 +148,28 @@ jobs:
           echo "path=$APK" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "$APK")" >> "$GITHUB_OUTPUT"
 
+      # JVM unit tests for the pure-Kotlin logic (widget snapshot math, custom
+      # gradient serialization). Fast, no emulator; runs after the APK so a
+      # packaging failure is reported by the assemble step first.
+      - name: Run unit tests
+        id: unit_tests
+        shell: bash
+        run: |
+          set +e
+          ./gradlew testDebugUnitTest --stacktrace > test.log 2>&1
+          status=$?
+          tail -n 80 test.log
+          exit $status
+
+      - name: Upload unit test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: IcyCheak-test-log
+          path: test.log
+          if-no-files-found: warn
+          retention-days: 7
+
       # Proves (or disproves) that consecutive builds share one signing identity, by
       # reporting the fingerprint of the keystore that signed this build. Two runs with
       # the same SHA-256 can update each other; different fingerprints mean the user

@@ -16,6 +16,14 @@ object AppManagementController {
     sealed interface AppActionResult {
         data class Success(val message: String) : AppActionResult
         data class Failure(val message: String) : AppActionResult
+
+        /**
+         * Standard (non-privileged) uninstall: the system confirmation dialog is
+         * about to take over. The caller must launch [intent] with an
+         * activity-result launcher and verify the outcome on resume — see
+         * [isPackageInstalled]. The launch itself is NOT a success.
+         */
+        data class NeedsUserConfirmation(val intent: Intent, val message: String) : AppActionResult
     }
 
     private fun hasElevation(): Boolean {
@@ -25,6 +33,25 @@ object AppManagementController {
 
     private fun ShellExecutionResult.combined(): String =
         (stdout + stderr).map { it.trim() }.filter { it.isNotBlank() }.joinToString(" ")
+
+    /**
+     * Authoritative post-uninstall check — the package manager, not a timer.
+     * FIXED: the standard uninstall flow used to decide on a fixed 30-second
+     * window after resume; now the caller verifies against PackageManager.
+     */
+    fun isPackageInstalled(context: Context, packageName: String): Boolean = try {
+        context.packageManager.getPackageInfo(packageName, 0)
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    /** The system uninstall confirmation for [packageName] (standard mode). */
+    fun buildStandardUninstallIntent(packageName: String): Intent =
+        Intent(Intent.ACTION_DELETE).apply {
+            data = Uri.parse("package:$packageName")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
 
     /**
      * Force-stops [packageName].
@@ -73,18 +100,15 @@ object AppManagementController {
                 }
             }
         } else {
-            val intent = Intent(Intent.ACTION_DELETE).apply {
-                data = Uri.parse("package:$packageName")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            val started = runCatching {
-                context.startActivity(intent)
-            }.isSuccess
-            if (started) {
-                AppActionResult.Success("Opened Android's uninstall confirmation.")
-            } else {
-                AppActionResult.Failure("No activity is available to uninstall $packageName.")
-            }
+            // FIXED — standard uninstall lifecycle: launching the confirmation
+            // dialog used to be reported as a *completed* uninstall and the app
+            // then guessed at the outcome with a 30-second timer. The screen now
+            // launches the intent through an activity-result launcher, waits for
+            // the real result, and verifies the package against PackageManager.
+            AppActionResult.NeedsUserConfirmation(
+                intent = buildStandardUninstallIntent(packageName),
+                message = "Waiting for Android's uninstall confirmation…"
+            )
         }
     }
 

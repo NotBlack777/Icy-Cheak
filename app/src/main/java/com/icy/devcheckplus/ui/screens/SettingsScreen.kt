@@ -1358,9 +1358,21 @@ private fun SelfManagementSection() {
                 AppManagementAction.FORCE_STOP -> AppManagementController.forceStop(context, context.packageName)
                 AppManagementAction.UNINSTALL -> AppManagementController.uninstall(context, context.packageName)
             }
-            busy = false
-            if (result is AppManagementController.AppActionResult.Failure) {
-                failureMessage = result.message
+            when (result) {
+                is AppManagementController.AppActionResult.Failure -> {
+                    busy = false
+                    failureMessage = result.message
+                }
+                is AppManagementController.AppActionResult.Success -> busy = false
+                is AppManagementController.AppActionResult.NeedsUserConfirmation -> {
+                    // Standard-mode self-uninstall: hand over to Android's
+                    // confirmation dialog. Not a completed action — the system
+                    // result governs what happens next, and this screen simply
+                    // resumes (possibly gone) afterwards.
+                    busy = false
+                    runCatching { context.startActivity(result.intent) }
+                        .onFailure { failureMessage = "No activity is available to uninstall ${context.packageName}." }
+                }
             }
         }
     }

@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
@@ -490,10 +489,16 @@ private val Context.userPreferencesDataStore: DataStore<Preferences> by
  *  - derived `StateFlow`s per option so a consumer of, say, the poll interval is
  *    not invalidated when the user picks a different gradient.
  *
- * Cold start: [init] performs a single blocking read of this one preference file
- * (sub-millisecond in practice, hard-capped below) so the very first frame
- * already uses the stored accent/gradient/animation instead of flashing the
- * defaults. After that nothing blocks — the flow keeps the mirror up to date.
+ * Cold start — FIXED, no more main-thread stall:
+ * [init] used to `runBlocking` on the *main* thread (Application.onCreate) to
+ * read DataStore before the first frame, which could stall startup for up to
+ * the full 750 ms cap on a cold device. The initial read is now performed
+ * asynchronously on Dispatchers.IO, and [ready] flips to `true` the moment the
+ * stored values are applied (or the hard cap expires and defaults proceed).
+ * MainActivity holds the window's splash/background — not a wrongly themed
+ * frame — until [ready] is true, so the very first composed frame already uses
+ * the saved accent/gradient/animation: no default→saved theme flash, and no
+ * startup stall.
  */
 object UserPreferencesStore {
 
@@ -528,6 +533,16 @@ object UserPreferencesStore {
     /** Full snapshot — use the per-option flows below unless you need everything. */
     val preferences: StateFlow<UserPreferences> = _preferences.asStateFlow()
 
+    /**
+     * False until the initial (asynchronous) DataStore read has been applied —
+     * or has hit [COLD_START_READ_TIMEOUT_MS], after which defaults proceed.
+     * Consumers that must not render with default theming (the root composable)
+     * wait for this; everything else simply reads the option flows, which start
+     * emitting stored values the moment this flips.
+     */
+    private val _ready = MutableStateFlow(false)
+    val ready: StateFlow<Boolean> = _ready.asStateFlow()
+
     val refreshRate: StateFlow<RefreshRate> = derive { it.refreshRate }
     val liveGraphsEnabled: StateFlow<Boolean> = derive { it.liveGraphsEnabled }
     val frameMetricsLogging: StateFlow<Boolean> = derive { it.frameMetricsLogging }
@@ -554,16 +569,22 @@ object UserPreferencesStore {
             .map(selector)
             .stateIn(scope, SharingStarted.Eagerly, selector(_preferences.value))
 
-    /** Called once from `Application.onCreate()`. */
+    /** Called once from `Application.onCreate()`. Does not block the caller. */
     fun init(context: Context) {
         val app = context.applicationContext
         appContext = app
-        val loaded = runCatching {
-            runBlocking {
+        // FIXED — cold start: the one initial DataStore read now happens on the
+        // IO dispatcher instead of `runBlocking` on the main thread. The hard cap
+        // still applies, and [ready] flips either way, so a pathologically slow
+        // file can delay theming by at most COLD_START_READ_TIMEOUT_MS and can
+        // never freeze application startup.
+        scope.launch {
+            val loaded = runCatching {
                 withTimeoutOrNull(COLD_START_READ_TIMEOUT_MS) { read(app) }
-            }
-        }.getOrNull()
-        if (loaded != null) _preferences.value = loaded
+            }.getOrNull()
+            if (loaded != null) _preferences.value = loaded
+            _ready.value = true
+        }
         // Keep the mirror current for writes made by anything else (another
         // process, a restored backup, the platform's auto-backup restore).
         scope.launch {

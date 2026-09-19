@@ -137,7 +137,22 @@ object PinnedItemsStore {
                         context,
                         AppSettingsStore.publicIpLookupEnabled(context)
                     )
-                    PinnableCategory.CAMERA -> CameraDataProvider.getCameraSections(context)
+                    PinnableCategory.CAMERA -> when (val cameraInfo = CameraDataProvider.getCameraInfo(context)) {
+                        is CameraDataProvider.CameraInfoResult.Success -> cameraInfo.sections
+                        is CameraDataProvider.CameraInfoResult.PermissionRequired -> listOf(
+                            InfoSection(
+                                "Camera",
+                                listOf(
+                                    InfoItem(
+                                        "Details",
+                                        "Requires camera permission",
+                                        subtitle = cameraInfo.reason
+                                    )
+                                )
+                            )
+                        )
+                        is CameraDataProvider.CameraInfoResult.Failure -> emptyList()
+                    }
                     PinnableCategory.CODECS -> CodecDataProvider.getCodecSections()
                     PinnableCategory.SECURITY -> SecurityDataProvider.getSecuritySections(context)
                 }

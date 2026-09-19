@@ -68,8 +68,56 @@ object PrivilegeManager {
 
     private var shizukuPermissionListenerRegistered = false
 
-    // Track active processes for cleanup on timeout
-    private val activeProcesses = java.util.Collections.synchronizedList(mutableListOf<Process>())
+    /**
+     * FIXED — shell timeout no longer kills unrelated processes.
+     *
+     * There used to be one global list of "active processes" that the hard
+     * timeout destroyed wholesale: if one command hung, every other in-flight
+     * shell command (e.g. the Dev Environment's parallel Node/Python/Git/Java
+     * probes) had its process destroyed too.
+     *
+     * Each execution now owns an [ExecutionJob] with a unique id. The job holds
+     * the *one* Process that execution spawned; a timeout (or a caller
+     * cancellation) destroys only that job's process. [activeJobs] is retained
+     * purely as a job-id→job diagnostic registry — nothing ever iterates it to
+     * kill things.
+     */
+    private class ExecutionJob(val id: String) {
+        @Volatile
+        var process: Process? = null
+
+        fun attach(process: Process) {
+            this.process = process
+        }
+
+        /** Only clears the pointer if it still points at this process (never at another job's). */
+        fun detach(process: Process) {
+            if (this.process === process) this.process = null
+        }
+
+        /** Destroys only the process this job owns. */
+        fun destroyProcess() {
+            val process = process ?: return
+            try {
+                if (process.isAlive) {
+                    process.destroy()
+                    if (process.isAlive) {
+                        Thread.sleep(50)
+                        if (process.isAlive) process.destroyForcibly()
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+    }
+
+    /** Diagnostics registry: execution id → the job that owns its process. */
+    private val activeJobs = java.util.concurrent.ConcurrentHashMap<String, ExecutionJob>()
+
+    /** Number of shell executions currently in flight (diagnostics/testing aid). */
+    fun activeExecutionCount(): Int = activeJobs.size
+
+    private fun newJobId(): String =
+        "exec-" + System.currentTimeMillis().toString(36) + "-" + (100..999).random()
 
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -244,16 +292,30 @@ object PrivilegeManager {
         if (SystemClock.elapsedRealtime() < circuitOpenUntil) {
             return timeoutResult(timeoutMs, "shell circuit open")
         }
-        val outcome = withHardTimeout(timeoutMs) { executeCommandInternal(command) }
-        if (outcome == null) {
-            if (consecutiveTimeouts.incrementAndGet() >= CIRCUIT_TRIP_THRESHOLD) {
-                circuitOpenUntil = SystemClock.elapsedRealtime() + CIRCUIT_COOLDOWN_MS
-                consecutiveTimeouts.set(0)
+        // FIXED — each command owns its job (and therefore its process). On a
+        // timeout only this job's process is destroyed; unrelated concurrent
+        // executions are untouched.
+        val job = ExecutionJob(newJobId())
+        activeJobs[job.id] = job
+        try {
+            val outcome = withHardTimeout(timeoutMs, job) { executeCommandInternal(command, job) }
+            if (outcome == null) {
+                if (consecutiveTimeouts.incrementAndGet() >= CIRCUIT_TRIP_THRESHOLD) {
+                    circuitOpenUntil = SystemClock.elapsedRealtime() + CIRCUIT_COOLDOWN_MS
+                    consecutiveTimeouts.set(0)
+                }
+                return timeoutResult(timeoutMs, "no response from shell")
             }
-            return timeoutResult(timeoutMs, "no response from shell")
+            consecutiveTimeouts.set(0)
+            return outcome
+        } catch (cancellation: kotlinx.coroutines.CancellationException) {
+            // Caller gave up (e.g. Console "cancel"): destroy only this command's
+            // process so a cancelled command cannot linger, then propagate.
+            job.destroyProcess()
+            throw cancellation
+        } finally {
+            activeJobs.remove(job.id)
         }
-        consecutiveTimeouts.set(0)
-        return outcome
     }
 
     fun resetWatchdog() {
@@ -262,29 +324,27 @@ object PrivilegeManager {
     }
 
     /**
-     * FIXED: Hard timeout now cleans up abandoned processes to prevent accumulation.
-     * Previously timed-out tasks left processes running in background.
+     * Hard timeout wrapper.
+     *
+     * FIXED: on timeout, cleanup is now scoped to [job] — the single process the
+     * timed-out execution owns. The old version destroyed every entry of a global
+     * process list, taking down unrelated concurrent commands.
+     *
+     * Note on the Root path: libsu multiplexes commands over one shared root
+     * shell, so no per-command Process exists there to destroy — the await is
+     * simply abandoned (libsu's own shell timeout still bounds it).
      */
-    private suspend fun <T> withHardTimeout(timeoutMs: Long, block: suspend () -> T): T? {
+    private suspend fun <T> withHardTimeout(
+        timeoutMs: Long,
+        job: ExecutionJob? = null,
+        block: suspend () -> T
+    ): T? {
         val deferred = scope.async(Dispatchers.IO) { block() }
         return try {
             withTimeout(timeoutMs) { deferred.await() }
         } catch (timeout: TimeoutCancellationException) {
             deferred.cancel()
-            try {
-                synchronized(activeProcesses) {
-                    activeProcesses.forEach { proc ->
-                        try {
-                            if (proc.isAlive) {
-                                proc.destroy()
-                                Thread.sleep(50)
-                                if (proc.isAlive) proc.destroyForcibly()
-                            }
-                        } catch (_: Throwable) {}
-                    }
-                    activeProcesses.clear()
-                }
-            } catch (_: Throwable) {}
+            job?.destroyProcess()
             null
         }
     }
@@ -298,31 +358,91 @@ object PrivilegeManager {
         timedOut = true
     )
 
-    private suspend fun executeCommandInternal(command: String): ShellExecutionResult = withContext(Dispatchers.IO) {
+    /**
+     * FIXED — execution-mode correctness.
+     *
+     * The old implementation executed the selected engine and, when it failed,
+     * fell through to [executeStandard] no matter what the user had chosen: a
+     * failed Root or Shizuku command silently ran unprivileged instead, and the
+     * result could be presented as if it were complete device data.
+     *
+     * Required behaviour, now enforced:
+     *  - AUTO  : Root first (if granted) → Shizuku fallback (if granted) →
+     *            Standard fallback;
+     *  - ROOT  : Root only — failure is returned as a clear failure;
+     *  - SHIZUKU: Shizuku only — failure is returned as a clear failure;
+     *  - NONE  : Standard only.
+     *
+     * [executionSource] always names the engine that actually ran, and the Root
+     * path verifies the shell really is root before crediting it, so privileged
+     * results can never be faked by a non-root shell.
+     */
+    private suspend fun executeCommandInternal(
+        command: String,
+        job: ExecutionJob
+    ): ShellExecutionResult = withContext(Dispatchers.IO) {
         val current = _status.value
-        val mode = current.activeMode
-        if (mode == PrivilegeMode.ROOT) {
-            val rootRes = executeViaRoot(command)
-            if (rootRes.isSuccess) return@withContext rootRes
-        } else if (mode == PrivilegeMode.SHIZUKU) {
-            val shizukuRes = executeViaShizuku(command)
-            if (shizukuRes.isSuccess) return@withContext shizukuRes
-        }
-        if (current.preferredMode == PrivilegeMode.AUTO) {
-            if (current.shizukuGranted && mode != PrivilegeMode.SHIZUKU) {
-                val shizukuRes = executeViaShizuku(command)
-                if (shizukuRes.isSuccess) return@withContext shizukuRes
-            }
-            if (current.rootGranted && mode != PrivilegeMode.ROOT) {
+        when (current.preferredMode) {
+            PrivilegeMode.ROOT -> {
                 val rootRes = executeViaRoot(command)
-                if (rootRes.isSuccess) return@withContext rootRes
+                if (rootRes.isSuccess) {
+                    rootRes
+                } else {
+                    // Explicit Root: a failed root command is a failure, full stop.
+                    rootRes.copy(
+                        stderr = rootRes.stderr +
+                            "Explicit Root mode: root execution failed — NOT falling back to the standard shell."
+                    )
+                }
+            }
+
+            PrivilegeMode.SHIZUKU -> {
+                val shizukuRes = executeViaShizuku(command, job)
+                if (shizukuRes.isSuccess) {
+                    shizukuRes
+                } else {
+                    // Explicit Shizuku: same contract — no silent standard fallback.
+                    shizukuRes.copy(
+                        stderr = shizukuRes.stderr +
+                            "Explicit Shizuku mode: Shizuku execution failed — NOT falling back to the standard shell."
+                    )
+                }
+            }
+
+            PrivilegeMode.NONE -> executeStandard(command, job)
+
+            PrivilegeMode.AUTO -> {
+                // Root first, then Shizuku, then standard — only with engines the
+                // user has actually granted.
+                if (current.rootGranted) {
+                    val rootRes = executeViaRoot(command)
+                    if (rootRes.isSuccess) return@withContext rootRes
+                }
+                if (current.shizukuGranted) {
+                    val shizukuRes = executeViaShizuku(command, job)
+                    if (shizukuRes.isSuccess) return@withContext shizukuRes
+                }
+                executeStandard(command, job)
             }
         }
-        executeStandard(command)
     }
 
     private fun executeViaRoot(command: String): ShellExecutionResult {
         return try {
+            // Correctness guard: make sure the libsu shell actually runs as root
+            // before attributing anything to "Root (libsu)". If the user picked
+            // Root mode but never granted it, libsu would otherwise hand back a
+            // plain non-root shell whose output could masquerade as privileged.
+            val shell = Shell.getShell()
+            if (!shell.isRoot) {
+                return ShellExecutionResult(
+                    isSuccess = false,
+                    exitCode = -1,
+                    stdout = emptyList(),
+                    stderr = listOf("Root shell unavailable — root was not granted on this device."),
+                    executionSource = "Root (libsu)"
+                )
+            }
             val result = Shell.cmd(command).exec()
             ShellExecutionResult(
                 isSuccess = result.isSuccess,
@@ -345,8 +465,12 @@ object PrivilegeManager {
     /**
      * FIXED: Concurrent stdout/stderr reading to avoid deadlock.
      * Previously sequential reading could deadlock when stderr buffer filled while reading stdout.
+     *
+     * The spawned process is attached to [job] immediately, so a hard timeout or
+     * a caller cancellation destroys exactly this process — never another
+     * command's.
      */
-    private fun executeViaShizuku(command: String): ShellExecutionResult {
+    private fun executeViaShizuku(command: String, job: ExecutionJob): ShellExecutionResult {
         var process: Process? = null
         return try {
             val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
@@ -359,7 +483,7 @@ object PrivilegeManager {
             newProcessMethod.isAccessible = true
             val cmdArray = arrayOf("sh", "-c", command)
             process = newProcessMethod.invoke(null, cmdArray, null, null) as Process
-            synchronized(activeProcesses) { activeProcesses.add(process) }
+            job.attach(process)
 
             val stdoutLines = mutableListOf<String>()
             val stderrLines = mutableListOf<String>()
@@ -403,20 +527,25 @@ object PrivilegeManager {
         } finally {
             try {
                 if (process != null) {
-                    synchronized(activeProcesses) { activeProcesses.remove(process) }
+                    // Own-process cleanup on the normal/exception path. The job
+                    // may already have destroyed it (timeout) — destroy is
+                    // idempotent, and detach() only clears our own pointer.
                     process.destroy()
-                    Thread.sleep(50)
-                    if (process.isAlive) process.destroyForcibly()
+                    if (process.isAlive) {
+                        Thread.sleep(50)
+                        if (process.isAlive) process.destroyForcibly()
+                    }
+                    job.detach(process)
                 }
             } catch (_: Throwable) {}
         }
     }
 
-    private fun executeStandard(command: String): ShellExecutionResult {
+    private fun executeStandard(command: String, job: ExecutionJob): ShellExecutionResult {
         var process: Process? = null
         return try {
             process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
-            synchronized(activeProcesses) { activeProcesses.add(process) }
+            job.attach(process)
 
             val stdoutLines = mutableListOf<String>()
             val stderrLines = mutableListOf<String>()
@@ -460,10 +589,12 @@ object PrivilegeManager {
         } finally {
             try {
                 if (process != null) {
-                    synchronized(activeProcesses) { activeProcesses.remove(process) }
                     process.destroy()
-                    Thread.sleep(50)
-                    if (process.isAlive) process.destroyForcibly()
+                    if (process.isAlive) {
+                        Thread.sleep(50)
+                        if (process.isAlive) process.destroyForcibly()
+                    }
+                    job.detach(process)
                 }
             } catch (_: Throwable) {}
         }
