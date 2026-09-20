@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -87,6 +88,7 @@ private val DRAWER_ITEMS = listOf(
 private fun labelFor(route: String): String =
     DRAWER_ITEMS.firstOrNull { it.first == route }?.second ?: "Icy Cheak"
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavigation(startRoute: String = "dashboard") {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -113,7 +115,7 @@ fun AppNavigation(startRoute: String = "dashboard") {
                             label = { Text(label) },
                             selected = route == r,
                             onClick = {
-                                haptic(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextSegmentTick)
+                                haptic(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                 route = r
                                 scope.launch { drawerState.close() }
                             }
@@ -135,7 +137,7 @@ fun AppNavigation(startRoute: String = "dashboard") {
                         }
                     },
                     actions = {
-                        PrivilegeStatusChip(onClick = { route = "settings"; haptic(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextSegmentTick) })
+                        PrivilegeStatusChip(onClick = { route = "settings"; haptic(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) })
                         IconButton(onClick = { scope.launch { shareDeviceReport(context) } }) {
                             Icon(Icons.Filled.Share, contentDescription = "Export report")
                         }

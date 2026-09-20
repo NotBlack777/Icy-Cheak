@@ -90,7 +90,7 @@ fun CrashLogScreen(onBack: () -> Unit) {
             ScrollLazyColumn(padding) {
                 if (note != null) item { WarningNote(note) }
                 item { SectionHeader("${list.size} entries (device dropbox / logcat)") }
-                items(list.size, key = { it.time.toString() + it.packageName }) { i -> CrashRow(list[i]) }
+                items(list.size, key = { list[it].time.toString() + list[it].packageName }) { i -> CrashRow(list[i]) }
             }
         }
     }

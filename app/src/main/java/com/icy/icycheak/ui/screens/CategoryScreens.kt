@@ -139,7 +139,7 @@ fun StorageScreen(onBack: () -> Unit) {
 @Composable
 fun NetworkScreen(onBack: () -> Unit) {
     ScreenScaffold("Network", onBack) { padding ->
-        val storedOptIn by AppSettings.publicIpOptIn.collectAsStateWithLifecycle()
+        val storedOptIn by AppSettings.publicIpOptIn.collectAsStateWithLifecycle(initialValue = false)
         var optIn by remember { mutableStateOf(storedOptIn) }
         val scope = rememberCoroutineScope()
         LaunchedEffect(storedOptIn) { optIn = storedOptIn }

@@ -92,10 +92,28 @@ object AppSettings {
     val publicIpOptIn: Flow<Boolean> = store.data.map { it[KEY_PUBLIC_IP] ?: false }
 
     // ---- combined theme config ----
-    val themeConfig: Flow<ThemeConfig> = combine(
-        accentHex, gradientPresetId, customGradientEnabled, customGradientA, customGradientB,
-        ambientStyleId, oledMode, darkModeName, liquidGlass, hapticsEnabled
-    ) { a, g, cgOn, cgA, cgB, amb, oled, dark, lg, hap ->
+    // The vararg combine() requires same-typed flows, but ours are mixed types.
+    // We build an array of Flow<Any> and cast back in the transform.
+    @Suppress("UNCHECKED_CAST")
+    val themeConfig: Flow<ThemeConfig> = kotlinx.coroutines.flow.combine(
+        arrayOf(
+            accentHex as Flow<Any>, gradientPresetId as Flow<Any>,
+            customGradientEnabled as Flow<Any>, customGradientA as Flow<Any>,
+            customGradientB as Flow<Any>, ambientStyleId as Flow<Any>,
+            oledMode as Flow<Any>, darkModeName as Flow<Any>,
+            liquidGlass as Flow<Any>, hapticsEnabled as Flow<Any>
+        )
+    ) { values ->
+        val a = values[0] as String
+        val g = values[1] as String
+        val cgOn = values[2] as Boolean
+        val cgA = values[3] as Long
+        val cgB = values[4] as Long
+        val amb = values[5] as String
+        val oled = values[6] as Boolean
+        val dark = values[7] as String
+        val lg = values[8] as Boolean
+        val hap = values[9] as Boolean
         ThemeConfig(
             accent = colorFromArgb(android.graphics.Color.parseColor(a).toLong()),
             gradientPresetId = g,

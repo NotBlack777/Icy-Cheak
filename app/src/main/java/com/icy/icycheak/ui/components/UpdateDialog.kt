@@ -62,8 +62,10 @@ fun UpdateDialog(updater: UpdaterViewModel) {
                     PickerOption(InstallMethod.PACKAGE.name, "Package Installer",
                         "Standard system install confirmation (always available)")
                 ),
-                selectedId = preselect
-            ) { id -> updater.install(InstallMethod.valueOf(id), s.file, s.release, context) }
+                selectedId = preselect,
+                onDismiss = { updater.dismissDialog() },
+                onPick = { id -> updater.install(InstallMethod.valueOf(id), s.file, s.release, context) }
+            )
         }
         is UpdaterState.Installing -> AlertDialog(
             onDismissRequest = {}, title = { Text("Installing…") },

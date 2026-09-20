@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -31,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.icycheak.data.providers.ConsoleHistoryStore
 import com.icy.icycheak.data.providers.ShellScriptStore
-import com.icy.icycheak.data.providers.formatBytes
 import com.icy.icycheak.model.ShellScript
 import com.icy.icycheak.privilege.PrivilegeEngine
 import com.icy.icycheak.ui.components.GlassSurface
@@ -53,6 +50,25 @@ fun ConsoleScreen(onBack: () -> Unit) {
         var showSave by remember { mutableStateOf(false) }
         var saveName by remember { mutableStateOf("") }
 
+        val runCmd: () -> Unit = {
+            val cmd = command.trim()
+            if (cmd.isNotBlank()) {
+                running = true
+                scope.launch {
+                    val res = PrivilegeEngine.execute(cmd, 15_000)
+                    output = buildString {
+                        appendLine("$ $cmd")
+                        appendLine(res.combinedOutput.ifBlank { "(no output)" })
+                        if (res.timedOut) appendLine("\u23F1 timed out")
+                        if (res.circuitOpen) appendLine("\u26A0 circuit breaker open")
+                        appendLine("exit=${res.exitCode}  via ${res.executionSource}")
+                    }
+                    ConsoleHistoryStore.add(cmd)
+                    running = false
+                }
+            }
+        }
+
         Column(Modifier.fillMaxSize().padding(padding).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OnboardingNote(
                 feature = "console",
@@ -69,7 +85,7 @@ fun ConsoleScreen(onBack: () -> Unit) {
                         keyboardActions = KeyboardActions(onGo = { runCmd() })
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { runCmd() }, enabled = !running && command.isNotBlank()) { Text(if (running) "Running…" else "Run") }
+                        Button(onClick = { runCmd() }, enabled = !running && command.isNotBlank()) { Text(if (running) "Running\u2026" else "Run") }
                         Button(onClick = { if (command.isNotBlank()) { saveName = command.take(20); showSave = true } }) { Text("Save script") }
                     }
                     if (history.isNotEmpty()) {
@@ -89,7 +105,7 @@ fun ConsoleScreen(onBack: () -> Unit) {
                         SectionHeader("Saved scripts", "tap to run")
                         scripts.forEach { s ->
                             Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f).clickable { runScript(s) }) {
+                                Column(Modifier.weight(1f).clickable { command = s.commands; runCmd() }) {
                                     Text(s.name, style = MaterialTheme.typography.titleSmall)
                                     Text(s.commands.take(60), style = MaterialTheme.typography.bodySmall)
                                 }
@@ -130,29 +146,6 @@ fun ConsoleScreen(onBack: () -> Unit) {
                 },
                 dismissButton = { TextButton(onClick = { showSave = false }) { Text("Cancel") } }
             )
-        }
-
-        fun runCmd() {
-            val cmd = command.trim()
-            if (cmd.isBlank()) return
-            running = true
-            scope.launch {
-                val res = PrivilegeEngine.execute(cmd, 15_000)
-                output = buildString {
-                    appendLine("$ $cmd")
-                    appendLine(res.combinedOutput.ifBlank { "(no output)" })
-                    if (res.timedOut) appendLine("⏱ timed out")
-                    if (res.circuitOpen) appendLine("⚠ circuit breaker open")
-                    appendLine("exit=${res.exitCode}  via ${res.executionSource}")
-                }
-                ConsoleHistoryStore.add(cmd)
-                running = false
-            }
-        }
-
-        fun runScript(s: ShellScript) {
-            command = s.commands
-            runCmd()
         }
     }
 }

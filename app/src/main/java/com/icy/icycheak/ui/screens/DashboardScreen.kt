@@ -1,5 +1,6 @@
 package com.icy.icycheak.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,6 +83,7 @@ private fun LiveMetricCard(label: String, value: String, modifier: Modifier = Mo
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CategoryGrid(
     items: List<CategoryId>,
@@ -93,7 +95,7 @@ private fun CategoryGrid(
         columns = GridCells.Fixed(3),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = androidx.compose.foundation.layout.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth()
     ) {
         items(items, key = { it.id }) { cat ->
             Box(
