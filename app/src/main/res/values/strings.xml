@@ -32,4 +32,10 @@
     <string name="widget_fallback_message">Couldn\'t refresh — tap to open</string>
 
     <string name="qs_tile_label">Icy Cheak</string>
+
+    <!-- App shortcuts (long-press app icon) -->
+    <string name="shortcut_console_short">Console</string>
+    <string name="shortcut_console_long">Open Console</string>
+    <string name="shortcut_export_short">Export</string>
+    <string name="shortcut_export_long">Export Device Report</string>
 </resources>

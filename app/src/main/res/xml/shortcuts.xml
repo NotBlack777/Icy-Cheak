@@ -4,8 +4,8 @@
         android:shortcutId="open_console"
         android:enabled="true"
         android:icon="@drawable/ic_widget_logo"
-        android:shortcutShortLabel="@string/widget_title"
-        android:shortcutLongLabel="Open Console">
+        android:shortcutShortLabel="@string/shortcut_console_short"
+        android:shortcutLongLabel="@string/shortcut_console_long">
         <intent
             android:action="com.icy.icycheak.action.OPEN_CONSOLE"
             android:targetPackage="com.icy.icycheak"
@@ -17,8 +17,8 @@
         android:shortcutId="export_report"
         android:enabled="true"
         android:icon="@drawable/ic_widget_logo"
-        android:shortcutShortLabel="Export"
-        android:shortcutLongLabel="Export Device Report">
+        android:shortcutShortLabel="@string/shortcut_export_short"
+        android:shortcutLongLabel="@string/shortcut_export_long">
         <intent
             android:action="com.icy.icycheak.action.EXPORT_REPORT"
             android:targetPackage="com.icy.icycheak"
