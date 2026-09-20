@@ -188,7 +188,7 @@ object PrivilegeEngine {
             .bufferedReader().readText().trim().isNotEmpty()
     }.getOrDefault(false)
 
-    fun requestRootAccess(): Boolean = runCatching {
+    suspend fun requestRootAccess(): Boolean = runCatching {
         withTimeout(ROOT_REQUEST_TIMEOUT_MS) {
             val shell = Shell.getShell()
             val granted = shell.isRoot

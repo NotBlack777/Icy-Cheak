@@ -96,7 +96,7 @@ object AppSettings {
     // We build an array of Flow<Any> and cast back in the transform.
     @Suppress("UNCHECKED_CAST")
     val themeConfig: Flow<ThemeConfig> = kotlinx.coroutines.flow.combine(
-        arrayOf(
+        *arrayOf(
             accentHex as Flow<Any>, gradientPresetId as Flow<Any>,
             customGradientEnabled as Flow<Any>, customGradientA as Flow<Any>,
             customGradientB as Flow<Any>, ambientStyleId as Flow<Any>,

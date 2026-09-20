@@ -46,7 +46,7 @@ fun UpdateDialog(updater: UpdaterViewModel) {
             confirmButton = {}
         )
         is UpdaterState.Ready -> {
-            val last = AppSettings.lastInstallMethod.first()
+            val last = kotlinx.coroutines.runBlocking { AppSettings.lastInstallMethod.first() }
             val preselect = when {
                 status.rootGranted && last == InstallMethod.ROOT.name -> InstallMethod.ROOT.name
                 status.shizukuGranted && last == InstallMethod.SHIZUKU.name -> InstallMethod.SHIZUKU.name

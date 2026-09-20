@@ -34,7 +34,7 @@ data class ResolvedTheme(
 val LocalTheme = compositionLocalOf<ResolvedTheme> { error("No ResolvedTheme provided") }
 
 /** Whether the current screen is actively scrolling (pauses ambient animation). */
-val LocalScrolling = compositionLocalOf<androidx.compose.runtime.State<Boolean>> { mutableStateOf(false) }
+val LocalScrolling = compositionLocalOf<androidx.compose.runtime.MutableState<Boolean>> { mutableStateOf(false) }
 
 @Composable
 fun IcyCheakTheme(content: @Composable () -> Unit) {

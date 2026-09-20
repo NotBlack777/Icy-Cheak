@@ -3,7 +3,6 @@ package com.icy.icycheak.qs
 import android.content.Intent
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import androidx.lifecycle.asFlow
 import com.icy.icycheak.MainActivity
 import com.icy.icycheak.data.settings.AppSettings
 import kotlinx.coroutines.flow.first

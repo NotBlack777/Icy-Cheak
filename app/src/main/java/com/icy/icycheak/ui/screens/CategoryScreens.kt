@@ -37,6 +37,7 @@ import com.icy.icycheak.ui.components.ScrollColumn
 import com.icy.icycheak.ui.components.SectionHeader
 import com.icy.icycheak.ui.components.WarningNote
 import com.icy.icycheak.ui.theme.LocalTheme
+import kotlinx.coroutines.launch
 
 @Composable
 fun HardwareScreen(onBack: () -> Unit) {

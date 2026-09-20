@@ -4,11 +4,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.Build
 import com.icy.icycheak.model.BatteryInfo
 import com.icy.icycheak.model.InfoRow
 import com.icy.icycheak.privilege.PrivilegeEngine
 
 object BatteryProvider {
+
+    // API 34+ constants — used by value to avoid compile errors on older SDKs.
+    private const val BATTERY_PROPERTY_CYCLE_COUNT = 7
+    private const val BATTERY_PROPERTY_CHARGE_FULL = 6
 
     suspend fun getBatteryInfo(context: Context): BatteryInfo {
         val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
@@ -29,9 +34,9 @@ object BatteryProvider {
         val temperatureC = if (tempRaw == Int.MIN_VALUE) null else tempRaw / 10f
         val voltageMv = intent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1) ?: -1
 
-        // Privileged-ish fields: try BatteryManager first, then dumpsys battery.
-        val cycleCount = readIntProperty(bm, BatteryManager.BATTERY_PROPERTY_CYCLE_COUNT)
-        val fullCapacity = readIntProperty(bm, BatteryManager.BATTERY_PROPERTY_CHARGE_FULL)
+        // API 34+ properties; on older devices these return 0 silently.
+        val cycleCount = readIntProperty(bm, BATTERY_PROPERTY_CYCLE_COUNT)
+        val fullCapacity = readIntProperty(bm, BATTERY_PROPERTY_CHARGE_FULL)
         val currentNow = readIntProperty(bm, BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
         val chargeCounter = readIntProperty(bm, BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
 
@@ -39,14 +44,14 @@ object BatteryProvider {
         val ds = if (dumpsys.isSuccess) dumpsys.stdout.joinToString("\n") else ""
 
         val chemistry = ds.lineSequence().firstOrNull { it.contains("technology", true) }
-            ?.substringAfter(":").trim().ifBlank { null }
+            ?.substringAfter(":")?.trim()?.ifBlank { null }
             ?: if (level >= 0) "Li-ion" else null
 
         val cycleFromDump = ds.lineSequence().firstOrNull { it.contains("cycle count", true) }
-            ?.substringAfter(":").trim().toIntOrNull()
+            ?.substringAfter(":")?.trim()?.toIntOrNull()
         val cycleStr = (cycleCount.takeIf { it > 0 } ?: cycleFromDump)?.toString()
         val fullFromDump = ds.lineSequence().firstOrNull { it.contains("charge full", true) }
-            ?.substringAfter(":").trim().toIntOrNull()
+            ?.substringAfter(":")?.trim()?.toIntOrNull()
         val fullStr = (fullCapacity.takeIf { it > 0 } ?: fullFromDump)?.let { "$it mAh" }
 
         val rows = listOfNotNull(

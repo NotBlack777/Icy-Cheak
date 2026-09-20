@@ -82,6 +82,7 @@ object HardwareProvider {
         } else null
     }.getOrNull()
 
+    @Suppress("DEPRECATION")
     private fun readOnlineCores(): Int = runCatching {
         val online = File("/sys/devices/system/cpu/online").readText().trim()
         // format like "0-7"
@@ -104,15 +105,15 @@ object HardwareProvider {
     private fun readSwap(): String = runCatching {
         val text = File("/proc/meminfo").readText()
         val zram = text.lineSequence().firstOrNull { it.startsWith("SwapTotal") }
-            ?.substringAfter(":").trim().substringBefore("kB").trim().toLongOrNull()
+            ?.substringAfter(":")?.trim()?.substringBefore("kB")?.trim()?.toLongOrNull()
         val kb = zram ?: return@runCatching "—"
         formatBytes(kb * 1024)
     }.getOrNull() ?: "—"
 
     fun readCpuMaxFreqHz(): Long {
         for (i in 0 until cpuCoreCount()) {
-            runCatching { File("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq").readText().trim().toLongOrNull() }
-                ?.let { if (it > 0) return it }
+            val v = runCatching { File("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq").readText().trim().toLongOrNull() }.getOrNull()
+            if (v != null && v > 0) return v
         }
         return 0L
     }

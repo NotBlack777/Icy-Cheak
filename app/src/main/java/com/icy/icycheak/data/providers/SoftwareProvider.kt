@@ -17,8 +17,8 @@ object SoftwareProvider {
     )
 
     suspend fun getSoftwareInfo(context: Context): SoftwareInfo {
-        val ver = Build.VERSION
-        val securityPatch = if (Build.VERSION.SDK_INT >= 23) Build.VERSION.SECURITY_PATCH else "—"
+        val sdkInt = Build.VERSION.SDK_INT
+        val securityPatch = if (sdkInt >= 23) Build.VERSION.SECURITY_PATCH else "—"
         val kernel = readKernelVersion()
         val arch = System.getProperty("os.arch") ?: "—"
         val uptime = readUptime()
@@ -27,8 +27,8 @@ object SoftwareProvider {
 
         val releaseName = Build.VERSION.RELEASE.orEmpty().ifBlank { "—" }
         val rows = listOf(
-            row("Android version", "$releaseName (API ${ver.sdkInt})"),
-            row("Codename", codenameFor(ver.sdkInt)),
+            row("Android version", "$releaseName (API $sdkInt)"),
+            row("Codename", codenameFor(sdkInt)),
             row("Security patch", securityPatch),
             row("Kernel", kernel),
             row("Architecture", arch),
@@ -46,9 +46,9 @@ object SoftwareProvider {
             })
         )
         return SoftwareInfo(
-            androidVersion = "${Build.VERSION.RELEASE.orEmpty()} (API ${ver.sdkInt})",
-            sdk = ver.sdkInt,
-            codename = codenameFor(ver.sdkInt),
+            androidVersion = "${Build.VERSION.RELEASE.orEmpty()} (API $sdkInt)",
+            sdk = sdkInt,
+            codename = codenameFor(sdkInt),
             securityPatch = securityPatch,
             kernel = kernel,
             arch = arch,

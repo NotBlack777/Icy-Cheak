@@ -15,11 +15,11 @@ object ProcessProvider {
      */
     suspend fun getProcesses(context: Context): Pair<List<ProcessInfo>, String?> {
         if (!PrivilegeEngine.status.value.hasElevated) {
-            return emptyList() to "Process list requires root or Shizuku"
+            return emptyList<ProcessInfo>() to "Process list requires root or Shizuku"
         }
         // Snapshot the pid/user/rss/name table.
         val ps = PrivilegeEngine.execute("ps -A -o pid,user,rss,comm 2>/dev/null", 6000)
-        if (!ps.isSuccess && ps.stdout.isEmpty()) return emptyList() to "Could not read process list"
+        if (!ps.isSuccess && ps.stdout.isEmpty()) return emptyList<ProcessInfo>() to "Could not read process list"
 
         val base = ps.stdout.mapNotNull { line ->
             val parts = line.trim().split(Regex("\\s+"))

@@ -25,7 +25,7 @@ object ShellScriptStore {
         write(parse(LocalStore.getJson(KEY)).filter { it.name != name })
     }
 
-    private fun write(list: List<ShellScript>) {
+    private suspend fun write(list: List<ShellScript>) {
         val arr = JSONArray()
         list.forEach { s ->
             arr.put(JSONObject().apply { put("name", s.name); put("commands", s.commands) })

@@ -111,7 +111,7 @@ object DevEnvironmentProvider {
         return DevTool(bin, name, false, DevToolSource.NOT_FOUND, null, null, "")
     }
 
-    private fun resolvePython(): String? {
+    private suspend fun resolvePython(): String? {
         val which = PrivilegeEngine.execute("command -v python3 2>/dev/null || command -v python 2>/dev/null", 4000)
         val path = which.stdout.firstOrNull { it.isNotBlank() }
         if (!path.isNullOrBlank()) return path

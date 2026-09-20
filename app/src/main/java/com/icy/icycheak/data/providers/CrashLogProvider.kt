@@ -18,7 +18,7 @@ object CrashLogProvider {
      */
     suspend fun getCrashLog(): Pair<List<CrashEntry>, String?> {
         if (!PrivilegeEngine.status.value.hasElevated) {
-            return emptyList() to "Crash / ANR log requires root or Shizuku"
+            return emptyList<CrashEntry>() to "Crash / ANR log requires root or Shizuku"
         }
         val crash = PrivilegeEngine.execute("logcat -b crash -d -v threadtime -t 300 2>/dev/null", 8000)
         val anr = PrivilegeEngine.execute("logcat -b system -d -v threadtime -t 500 2>/dev/null | grep -i 'anr in\\|ANR ' ", 8000)

@@ -29,21 +29,17 @@ class IcyCheakApp : Application() {
         startBatteryHistorySampler()
     }
 
-    /**
-     * Lightweight, app-wide sampler for the battery drain-history graph. Records
-     * immediately, then again on every battery-change broadcast and every 15 min.
-     * Capped to the last 7 days inside [BatteryHistoryRepository].
-     */
     private fun startBatteryHistorySampler() {
+        // Periodic sampler
         appScope.launch {
             recordBatterySample()
-            val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
             while (true) {
                 delay(15 * 60 * 1000L)
                 recordBatterySample()
             }
         }
-        // Also react to battery changes without polling.
+        // Also react to battery changes
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         registerReceiver(object : android.content.BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent == null) return
@@ -56,7 +52,7 @@ class IcyCheakApp : Application() {
         }, filter)
     }
 
-    private fun recordBatterySample() {
+    private suspend fun recordBatterySample() {
         val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
         val lvl = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
