@@ -1,9 +1,12 @@
 package com.icy.icycheak.ui.components
 
-import androidx.compose.material3.LocalHapticFeedback
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.platform.LocalHapticFeedback
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import com.icy.icycheak.data.settings.AppSettings
 
 /**
@@ -12,7 +15,7 @@ import com.icy.icycheak.data.settings.AppSettings
  */
 @Composable
 fun haptics(): (HapticFeedbackType) -> Unit {
-    val enabled by AppSettings.hapticsEnabled.collectAsStateWithLifecycle()
     val hf = LocalHapticFeedback.current
+    val enabled = remember { runBlocking { AppSettings.hapticsEnabled.first() } }
     return { type -> if (enabled) hf.performHapticFeedback(type) }
 }

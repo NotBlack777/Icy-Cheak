@@ -20,11 +20,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.icycheak.BuildConfig
@@ -47,7 +49,7 @@ import com.icy.icycheak.ui.theme.GradientPresets
 import com.icy.icycheak.ui.theme.LocalTheme
 import com.icy.icycheak.ui.viewmodel.UpdaterState
 import com.icy.icycheak.ui.viewmodel.UpdaterViewModel
-import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 
 private val ACCENTS = listOf(
     "FF8A00" to "Sunset", "00C9FF" to "Ocean", "7F00FF" to "Violet",
@@ -58,6 +60,7 @@ private val ACCENTS = listOf(
 fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
     val theme = LocalTheme.current
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val liquidGlass by AppSettings.liquidGlass.collectAsStateWithLifecycle(true)
     val oled by AppSettings.oledMode.collectAsStateWithLifecycle(false)
@@ -90,12 +93,11 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                             Text("Full blur / gradient / animated look", style = MaterialTheme.typography.bodySmall)
                         }
                         Switch(checked = liquidGlass && !oled, enabled = !oled, onCheckedChange = {
-                            AppSettings.setLiquidGlass(it)
+                            scope.launch { AppSettings.setLiquidGlass(it) }
                         })
                     }
                     if (oled) Text("OLED forces Normal (lightweight) mode for performance.",
                         style = MaterialTheme.typography.labelSmall, color = Color(0xFFD29922))
-                    // Normal mode note
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Normal mode", style = MaterialTheme.typography.titleSmall)
@@ -109,23 +111,25 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                             Text("Pure black + auto Normal mode", style = MaterialTheme.typography.bodySmall)
                         }
                         Switch(checked = oled, onCheckedChange = {
-                            AppSettings.setOled(it)
-                            if (it) AppSettings.setLiquidGlass(false)
+                            scope.launch {
+                                AppSettings.setOled(it)
+                                if (it) AppSettings.setLiquidGlass(false)
+                            }
                         })
                     }
                     Text("Dark mode", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
                     SegmentedChips(
                         options = listOf(
-                            PickerOption(DarkMode.SYSTEM.name, "System"),
-                            PickerOption(DarkMode.LIGHT.name, "Light"),
-                            PickerOption(DarkMode.DARK.name, "Dark")
+                            PickerOption(DarkMode.SYSTEM.name, "System", "Follow system setting"),
+                            PickerOption(DarkMode.LIGHT.name, "Light", "Light theme"),
+                            PickerOption(DarkMode.DARK.name, "Dark", "Dark theme")
                         ),
                         selectedId = darkMode
-                    ) { AppSettings.setDarkMode(DarkMode.valueOf(it)) }
+                    ) { scope.launch { AppSettings.setDarkMode(DarkMode.valueOf(it)) } }
 
                     Text("Accent color", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ACCENTS.forEach { (hex, name) ->
+                        ACCENTS.forEach { (hex, _) ->
                             val selected = accent.equals("#$hex", true)
                             Box(
                                 Modifier
@@ -137,7 +141,7 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                                         color = if (selected) Color.White else Color.Transparent,
                                         shape = CircleShape
                                     )
-                                    .clickable { AppSettings.setAccent("#$hex") }
+                                    .clickable { scope.launch { AppSettings.setAccent("#$hex") } }
                             )
                         }
                     }
@@ -146,36 +150,38 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         GradientPresets.ids().forEach { id ->
                             SurfaceChip(selected = gradPreset == id && !customOn, label = id) {
-                                AppSettings.setCustomGradient(false, customA, customB)
-                                AppSettings.setGradientPreset(id)
+                                scope.launch {
+                                    AppSettings.setCustomGradient(false, customA, customB)
+                                    AppSettings.setGradientPreset(id)
+                                }
                             }
                         }
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("Custom gradient", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Switch(checked = customOn, onCheckedChange = { AppSettings.setCustomGradient(it, customA, customB) })
+                        Switch(checked = customOn, onCheckedChange = { scope.launch { AppSettings.setCustomGradient(it, customA, customB) } })
                     }
                     if (customOn) {
                         Text("Start", style = MaterialTheme.typography.labelSmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ACCENTS.forEach { (hex, _) ->
                                 Box(Modifier.size(30.dp).clip(CircleShape).background(Color(android.graphics.Color.parseColor("#$hex")))
-                                    .clickable { AppSettings.setCustomGradient(true, android.graphics.Color.parseColor("#$hex").toLong(), customB) })
+                                    .clickable { scope.launch { AppSettings.setCustomGradient(true, android.graphics.Color.parseColor("#$hex").toLong(), customB) } })
                             }
                         }
                         Text("End", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ACCENTS.forEach { (hex, _) ->
                                 Box(Modifier.size(30.dp).clip(CircleShape).background(Color(android.graphics.Color.parseColor("#$hex")))
-                                    .clickable { AppSettings.setCustomGradient(true, customA, android.graphics.Color.parseColor("#$hex").toLong()) })
+                                    .clickable { scope.launch { AppSettings.setCustomGradient(true, customA, android.graphics.Color.parseColor("#$hex").toLong()) } })
                             }
                         }
                     }
                     Text("Ambient background", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        AmbientStyle.values().forEach { s ->
+                        AmbientStyle.entries.forEach { s ->
                             SurfaceChip(selected = ambient == s.name, label = s.name.lowercase()) {
-                                AppSettings.setAmbientStyle(s)
+                                scope.launch { AppSettings.setAmbientStyle(s) }
                             }
                         }
                     }
@@ -191,12 +197,12 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                             Text("Live graphs", style = MaterialTheme.typography.titleSmall)
                             Text("master on/off for live charts", style = MaterialTheme.typography.bodySmall)
                         }
-                        Switch(checked = liveGraphs, onCheckedChange = { AppSettings.setLiveGraphs(it) })
+                        Switch(checked = liveGraphs, onCheckedChange = { scope.launch { AppSettings.setLiveGraphs(it) } })
                     }
-                    Text("Refresh rate: ${refreshMs} ms", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
-                    androidx.compose.material3.Slider(
+                    Text("Refresh rate: $refreshMs ms", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                    Slider(
                         value = refreshMs.toFloat(),
-                        onValueChange = { AppSettings.setRefreshRate(it.toLong()) },
+                        onValueChange = { scope.launch { AppSettings.setRefreshRate(it.toLong()) } },
                         valueRange = 250f..5000f, steps = 18
                     )
                 }
@@ -243,19 +249,19 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
-                        androidx.compose.material3.Button(onClick = { updater.check() }) { Text("Check") }
+                        Button(onClick = { updater.check() }) { Text("Check") }
                     }
                 }
             }
 
             // ---- Misc ----
             GlassSurface(Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Haptics", style = MaterialTheme.typography.titleSmall)
                         Text("vibration on toggles/selections", style = MaterialTheme.typography.bodySmall)
                     }
-                    Switch(checked = haptics, onCheckedChange = { AppSettings.setHaptics(it) })
+                    Switch(checked = haptics, onCheckedChange = { scope.launch { AppSettings.setHaptics(it) } })
                 }
             }
             Text("Icy Cheak is 100% free, ad-free, no analytics or tracking.",
@@ -288,7 +294,7 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
             options = options,
             selectedId = lastInstall,
             onDismiss = { showInstall = false },
-            onPick = { id -> AppSettings.setLastInstallMethod(InstallMethod.valueOf(id)); showInstall = false }
+            onPick = { id -> scope.launch { AppSettings.setLastInstallMethod(InstallMethod.valueOf(id)) }; showInstall = false }
         )
     }
 }

@@ -150,7 +150,7 @@ fun ChangelogScreen(onBack: () -> Unit) {
     ScreenScaffold("What's New", onBack) { padding ->
         LoadableContent(loader = { UpdateRepository.listReleases() }) { releases ->
             ScrollLazyColumn(padding) {
-                items(releases.size, key = { it.tagName }) { i ->
+                items(releases.size, key = { releases[it].tagName }) { i ->
                     val r = releases[i]
                     GlassSurface(Modifier.fillMaxWidth()) {
                         Column {

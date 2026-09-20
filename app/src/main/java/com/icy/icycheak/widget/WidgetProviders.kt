@@ -46,7 +46,7 @@ data class WidgetData(
             runCatching {
                 val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
                 level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-                val intent = context.registerReceiver(null, android.content.Intent(android.content.Intent.ACTION_BATTERY_CHANGED))
+                val intent = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
                 val t = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
                 temp = if (t == null || t == Int.MIN_VALUE) null else t / 10f
             }
@@ -61,9 +61,10 @@ data class WidgetData(
 
         private fun readMaxFreq(): Long {
             for (i in 0 until 8) {
-                runCatching {
+                val v = runCatching {
                     File("/sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_max_freq").readText().trim().toLongOrNull()
-                }?.let { if (it > 0) return it }
+                }.getOrNull()
+                if (v != null && v > 0) return v
             }
             return 0L
         }
