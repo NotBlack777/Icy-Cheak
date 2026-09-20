@@ -65,10 +65,10 @@ class CircuitBreakerTest {
     @Test
     fun transitionsToHalfOpenAfterCooldown() {
         repeat(3) { cb.recordFailure(now = it * 100L) } // openUntil = 200 + 10000 = 10200
-        // Query at t=10300 (> 10200): isOpen should return false and reset
+        // Query at t=10300 (> 10200): isOpen should return false (half-open)
         assertFalse(cb.isOpen(now = 10_300L))
-        assertEquals(0, cb.consecutiveFailures())
-        assertEquals(0L, cb.openUntil())
+        assertEquals(3, cb.consecutiveFailures()) // failures preserved in half-open
+        assertEquals(0L, cb.openUntil())           // openUntil cleared
     }
 
     // ---- half-open: success resets, failure re-opens ---------------------
