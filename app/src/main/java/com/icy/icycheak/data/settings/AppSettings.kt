@@ -159,7 +159,7 @@ object AppSettings {
             val existing: Set<String> = prefs[KEY_SEARCH_HISTORY] ?: emptySet()
             val set = existing.filter { it != q }.toMutableSet()
             set.add(q)
-            prefs[KEY_SEARCH_HISTORY] = set.takeLast(20).toSet()
+            prefs[KEY_SEARCH_HISTORY] = set.toList().takeLast(20).toSet()
         }
     }
 
