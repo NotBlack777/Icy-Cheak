@@ -4,7 +4,7 @@
     <!-- Home screen widget family -->
     <string name="widget_name">Icy Cheak Metrics</string>
     <string name="widget_title">Icy Cheak</string>
-    <string name="widget_description">Live battery, RAM and CPU — premium quick stats.</string>
+    <string name="widget_description">Live battery, RAM and CPU — quick stats.</string>
     <string name="widget_battery_label">BATTERY</string>
     <string name="widget_ram_label">RAM</string>
     <string name="widget_cpu_label">CPU</string>
@@ -30,4 +30,6 @@
 
     <!-- Shown only when a widget's full render fails; tapping opens the app. -->
     <string name="widget_fallback_message">Couldn\'t refresh — tap to open</string>
+
+    <string name="qs_tile_label">Icy Cheak</string>
 </resources>

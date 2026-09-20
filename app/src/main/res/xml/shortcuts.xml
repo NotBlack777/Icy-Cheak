@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="open_console"
+        android:enabled="true"
+        android:icon="@drawable/ic_widget_logo"
+        android:shortcutShortLabel="@string/widget_title"
+        android:shortcutLongLabel="Open Console">
+        <intent
+            android:action="com.icy.icycheak.action.OPEN_CONSOLE"
+            android:targetPackage="com.icy.icycheak"
+            android:targetClass="com.icy.icycheak.MainActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="export_report"
+        android:enabled="true"
+        android:icon="@drawable/ic_widget_logo"
+        android:shortcutShortLabel="Export"
+        android:shortcutLongLabel="Export Device Report">
+        <intent
+            android:action="com.icy.icycheak.action.EXPORT_REPORT"
+            android:targetPackage="com.icy.icycheak"
+            android:targetClass="com.icy.icycheak.MainActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>
