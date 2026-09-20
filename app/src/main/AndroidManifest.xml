@@ -9,14 +9,16 @@
     <!-- Fine location is required on modern Android to read Wi-Fi SSID / BSSID / frequency -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- Deliberately NO READ_PHONE_STATE: the cellular section only reads public
-         carrier/SIM fields (operator names, country ISOs, SIM state) that need no
-         runtime permission, and the app never reads device identifiers. -->
+    <!-- Post notifications (Android 13+) for update / benchmark completion toasts -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- In-app updater: download a release APK and hand it to the package installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Query all packages for installed apps section -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Re-arm the shared widget refresh scheduler after a reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Queries for Shizuku package visibility on Android 11+ -->
     <queries>
@@ -27,7 +29,7 @@
     </queries>
 
     <application
-        android:name=".DevCheckApp"
+        android:name=".IcyCheakApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -35,23 +37,33 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.DevCheckPlus">
+        android:theme="@style/Theme.IcyCheak">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.DevCheckPlus">
+            android:theme="@style/Theme.IcyCheak">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Deep links used by App Shortcuts / Tasker-style intents. -->
+            <intent-filter>
+                <action android:name="com.icy.icycheak.action.OPEN_CONSOLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.icy.icycheak.action.EXPORT_REPORT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
-        <!-- Widget family — 7 widgets: Metrics, Compact, Battery, Device
-             Overview, Performance, Minimal and Network. Every receiver here is
-             matched 1:1 by an appwidget-provider metadata XML in res/xml and a
-             provider class in widget/MetricsWidgetProvider.kt (enforced by
-             WidgetConsistencyTest). -->
+        <!-- Widget family — 6 widgets. Every receiver is matched 1:1 by an
+             appwidget-provider metadata XML in res/xml and a provider class in
+             widget/ (enforced by WidgetConsistencyTest). -->
         <receiver android:name=".widget.MetricsWidgetProvider" android:exported="false" android:label="@string/widget_name">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info" />
@@ -80,6 +92,28 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_network_info" />
         </receiver>
+
+        <!-- Single shared widget refresh scheduler (also re-arms on boot). -->
+        <receiver
+            android:name=".widget.WidgetTickReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.icy.icycheak.WIDGET_TICK" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Quick Settings tile: jump to the Dashboard / toggle Live Graphs. -->
+        <service
+            android:name=".qs.IcyCheakTileService"
+            android:exported="false"
+            android:icon="@drawable/ic_widget_logo"
+            android:label="@string/qs_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"

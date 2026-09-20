@@ -2,9 +2,9 @@
 <resources>
     <color name="ic_launcher_background">#08080C</color>
 
-    <!-- Home screen widget palette — updated to match sunset premium brand -->
-    <color name="widget_card_background">#F2121218</color>
-    <color name="widget_cell_background">#18FFFFFF</color>
+    <!-- Home screen widget palette — flat, widget-safe colors -->
+    <color name="widget_card_background">#F20E0E12</color>
+    <color name="widget_cell_background">#1AFFFFFF</color>
     <color name="widget_border">#33FF8A00</color>
     <color name="widget_text_primary">#F0F6FC</color>
     <color name="widget_text_secondary">#8B949E</color>
