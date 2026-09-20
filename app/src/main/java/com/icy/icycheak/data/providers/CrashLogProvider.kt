@@ -23,7 +23,7 @@ object CrashLogProvider {
         val crash = PrivilegeEngine.execute("logcat -b crash -d -v threadtime -t 300 2>/dev/null", 8000)
         val anr = PrivilegeEngine.execute("logcat -b system -d -v threadtime -t 500 2>/dev/null | grep -i 'anr in\\|ANR ' ", 8000)
         val lines = (crash.stdout + anr.stdout).filter { it.isNotBlank() }
-        if (lines.isEmpty()) return emptyList() to null
+        if (lines.isEmpty()) return emptyList<CrashEntry>() to null
 
         val entries = mutableListOf<CrashEntry>()
         var i = 0

@@ -119,7 +119,7 @@ object DevEnvironmentProvider {
         return if (File(termuxPy).exists()) termuxPy else null
     }
 
-    private fun versionFor(bin: String, path: String): String? {
+    private suspend fun versionFor(bin: String, path: String): String? {
         val res = PrivilegeEngine.execute("$path --version 2>&1 || $path -v 2>&1 || $path version 2>&1", 5000)
         val out = res.stdout.firstOrNull { it.isNotBlank() } ?: res.stderr.firstOrNull { it.isNotBlank() }
         return versionFromOutput(out ?: "", bin)

@@ -52,7 +52,7 @@ import com.icy.icycheak.ui.theme.LocalTheme
  * (`scrollState.isScrollInProgress`).
  */
 @Composable
-fun ProvideScrolling(scrolling: State<Boolean>, content: @Composable () -> Unit) {
+fun ProvideScrolling(scrolling: androidx.compose.runtime.MutableState<Boolean>, content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalScrolling provides scrolling) {
         content()
     }

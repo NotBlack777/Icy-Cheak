@@ -156,7 +156,8 @@ object AppSettings {
     suspend fun addSearchQuery(q: String) {
         if (q.isBlank()) return
         store.edit { prefs ->
-            val set = (prefs[KEY_SEARCH_HISTORY] ?: emptySet()).filter { it != q }.toMutableSet()
+            val existing: Set<String> = prefs[KEY_SEARCH_HISTORY] ?: emptySet()
+            val set = existing.filter { it != q }.toMutableSet()
             set.add(q)
             prefs[KEY_SEARCH_HISTORY] = set.takeLast(20).toSet()
         }
