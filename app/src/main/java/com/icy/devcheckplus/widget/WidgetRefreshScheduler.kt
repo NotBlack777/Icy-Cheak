@@ -48,7 +48,8 @@ object WidgetRefreshScheduler {
         BatteryWidgetProvider::class.java,
         DeviceOverviewWidgetProvider::class.java,
         PerformanceWidgetProvider::class.java,
-        MinimalWidgetProvider::class.java
+        MinimalWidgetProvider::class.java,
+        NetworkWidgetProvider::class.java
     )
 
     @Volatile
@@ -105,8 +106,6 @@ object WidgetRefreshScheduler {
         } catch (ignored: Throwable) {
         }
     }
-
-    private fun SystemClockElapsed(): Long = android.os.SystemClock.elapsedRealtime()
 
     private fun refreshIntent(context: Context): PendingIntent {
         // Explicit component intent: allowed for manifest receivers even with

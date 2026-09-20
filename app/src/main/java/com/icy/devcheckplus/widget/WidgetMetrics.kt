@@ -73,6 +73,37 @@ object WidgetMetrics {
         }
     }
 
+    /**
+     * [read] that can never throw: an unexpected telemetry failure is logged
+     * under [WidgetLog.TAG] and degrades to an all-unavailable snapshot, whose
+     * fields every provider renders as "--" placeholders. A widget must never
+     * die because one metric blew up.
+     */
+    fun readSafely(provider: String, context: Context, maxAgeMs: Long = 1_000L): WidgetSnapshot =
+        try {
+            read(context, maxAgeMs)
+        } catch (t: Throwable) {
+            WidgetLog.snapshotFailure(provider, t)
+            WidgetSnapshot(
+                batteryPercent = -1,
+                batteryCharging = false,
+                batteryTempC = null,
+                batteryVoltageMv = null,
+                batteryHealth = null,
+                ramUsedMb = 0L,
+                ramTotalMb = 0L,
+                cpuFreqMhz = 0f,
+                cpuReadable = false,
+                cpuCoreCount = Runtime.getRuntime().availableProcessors().coerceIn(1, 32),
+                deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim(),
+                androidVersion = "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})",
+                storageUsedGb = 0f,
+                storageTotalGb = 0f,
+                networkType = "Unknown",
+                networkExtra = null
+            )
+        }
+
     private fun readUncached(context: Context): WidgetSnapshot {
         val (batteryPercent, charging, tempC, voltageMv, health) = readBattery(context)
         val (usedMb, totalMb) = readRam(context)
@@ -117,7 +148,9 @@ object WidgetMetrics {
             val level = sticky.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
             val scale = sticky.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
             val status = sticky.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
-            val percent = if (level >= 0 && scale > 0) (level * 100) / scale else -1
+            // Clamp: a misbehaving driver can report level > scale; the widget
+            // must never show an impossible percentage.
+            val percent = if (level >= 0 && scale > 0) ((level * 100) / scale).coerceIn(0, 100) else -1
             val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
             val tempRaw = sticky.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1)
             val tempC = if (tempRaw > 0) tempRaw / 10f else null

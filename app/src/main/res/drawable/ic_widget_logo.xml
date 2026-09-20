@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Widget-safe brand mark.
+
+  ic_launcher_foreground.xml is a 108dp adaptive-icon vector that paints its
+  background through an <aapt:attr> linear gradient. Gradient vectors like that
+  are fine for the launcher icon, but they are a well-known cause of
+  "Can't load widget" failures when inflated through RemoteViews on a number of
+  OEM launchers / widget hosts.
+
+  This drawable is the same brand mark re-drawn with ONLY solid fills
+  (no <aapt:attr>, no <gradient>, no adaptive-icon sizing), which every
+  RemoteViews host renders reliably. Widget layouts must reference this file
+  and never ic_launcher_foreground.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Rounded tile in the brand sunset-orange (flat, no gradient). -->
+    <path
+        android:pathData="M10,0h28a10,10 0 0 1 10,10v28a10,10 0 0 1 -10,10h-28a10,10 0 0 1 -10,-10v-28a10,10 0 0 1 10,-10z"
+        android:fillColor="#FF8A00" />
+
+    <!-- Soft top sheen as a flat translucent path (depth without gradients). -->
+    <path
+        android:pathData="M10,0h28a10,10 0 0 1 10,10v4a10,10 0 0 0 -10,-10h-28a10,10 0 0 0 -10,10v-4a10,10 0 0 1 10,-10z"
+        android:fillColor="#40FFFFFF" />
+
+    <!-- Check mark shadow for depth. -->
+    <path
+        android:pathData="M13.5,26L20.5,33L34.5,17"
+        android:fillColor="#00000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.22" />
+
+    <!-- Main white check. -->
+    <path
+        android:pathData="M13,25L20,32L34,16"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Icy sparkle accent, flat white. -->
+    <path
+        android:pathData="M36,7L37.2,9.8L40,11L37.2,12.2L36,15L34.8,12.2L32,11L34.8,9.8Z"
+        android:fillColor="#FFFFFF" />
+
+</vector>

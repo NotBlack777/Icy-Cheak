@@ -161,6 +161,14 @@ jobs:
           tail -n 80 test.log
           exit $status
 
+      # Same rationale as the compiler-error annotations: the raw test log is
+      # not downloadable from every environment, so failing test names and
+      # messages are surfaced as check-run annotations directly.
+      - name: Publish unit test failures
+        if: failure()
+        shell: bash
+        run: python3 .github/scripts/report_test_failures.py
+
       - name: Upload unit test log
         if: failure()
         uses: actions/upload-artifact@v4

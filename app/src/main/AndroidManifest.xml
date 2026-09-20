@@ -9,8 +9,9 @@
     <!-- Fine location is required on modern Android to read Wi-Fi SSID / BSSID / frequency -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- Phone state for cellular carrier / SIM info -->
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Deliberately NO READ_PHONE_STATE: the cellular section only reads public
+         carrier/SIM fields (operator names, country ISOs, SIM state) that need no
+         runtime permission, and the app never reads device identifiers. -->
     <!-- In-app updater: download a release APK and hand it to the package installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Query all packages for installed apps section -->
@@ -46,7 +47,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Widget Family — 6 polished widgets -->
+        <!-- Widget family — 7 widgets: Metrics, Compact, Battery, Device
+             Overview, Performance, Minimal and Network. Every receiver here is
+             matched 1:1 by an appwidget-provider metadata XML in res/xml and a
+             provider class in widget/MetricsWidgetProvider.kt (enforced by
+             WidgetConsistencyTest). -->
         <receiver android:name=".widget.MetricsWidgetProvider" android:exported="false" android:label="@string/widget_name">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info" />
@@ -70,6 +75,10 @@
         <receiver android:name=".widget.MinimalWidgetProvider" android:exported="false" android:label="@string/widget_minimal_name">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_minimal_info" />
+        </receiver>
+        <receiver android:name=".widget.NetworkWidgetProvider" android:exported="false" android:label="@string/widget_network_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_network_info" />
         </receiver>
 
         <provider
