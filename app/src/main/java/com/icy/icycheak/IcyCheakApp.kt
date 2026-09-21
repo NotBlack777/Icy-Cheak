@@ -22,8 +22,10 @@ class IcyCheakApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        AppSettings.init(this)
-        LocalStore.init(this)
+        // Initialize settings first: AppSettings exposes DataStore-backed Flows,
+        // so no later application startup component may touch them before this.
+        AppSettings.init(applicationContext)
+        LocalStore.init(applicationContext)
         PrivilegeEngine.init(this)
         LiveTicker.init(this)
         startBatteryHistorySampler()

@@ -169,6 +169,20 @@ jobs:
         shell: bash
         run: python3 .github/scripts/report_test_failures.py
 
+      # Compile-time checks cannot catch Application/object initialization crashes.
+      # Run the launcher Activity on a real Android emulator so the Application
+      # reaches onCreate and the first-use DataStore defaults are exercised.
+      - name: Run Android startup smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: Pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: true
+          script: ./gradlew connectedDebugAndroidTest --stacktrace
+
       - name: Upload unit test log
         if: failure()
         uses: actions/upload-artifact@v4
