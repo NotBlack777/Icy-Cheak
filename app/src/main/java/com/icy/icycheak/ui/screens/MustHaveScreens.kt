@@ -13,11 +13,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.icycheak.data.providers.BatteryHistoryRepository
 import com.icy.icycheak.data.providers.CrashLogProvider
@@ -27,18 +27,19 @@ import com.icy.icycheak.model.AppPermissionEntry
 import com.icy.icycheak.model.CrashEntry
 import com.icy.icycheak.model.InfoRow
 import com.icy.icycheak.ui.components.GlassSurface
-import com.icy.icycheak.ui.components.OnboardingNote
 import com.icy.icycheak.ui.components.InfoCard
 import com.icy.icycheak.ui.components.LineChart
 import com.icy.icycheak.ui.components.LoadableContent
+import com.icy.icycheak.ui.components.OnboardingNote
 import com.icy.icycheak.ui.components.ScreenScaffold
 import com.icy.icycheak.ui.components.ScrollColumn
 import com.icy.icycheak.ui.components.ScrollLazyColumn
 import com.icy.icycheak.ui.components.SectionHeader
 import com.icy.icycheak.ui.components.SurfaceChip
 import com.icy.icycheak.ui.components.WarningNote
+import com.icy.icycheak.ui.theme.AppSpacing
 import com.icy.icycheak.updater.UpdateRepository
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -59,7 +60,11 @@ fun PermissionsAuditScreen(onBack: () -> Unit) {
                     title = "Permissions Audit",
                     body = "Lists dangerous permissions each app holds (camera, mic, location, contacts, SMS, etc.). Filter by permission type to find apps overreaching their access."
                 ) }
-                item { Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { Row(
+                    Modifier.fillMaxWidth().padding(vertical = AppSpacing.extraSmall),
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.small),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     categories.forEach { cat -> SurfaceChip(selected = selected == cat, label = cat) { selected = cat } }
                 } }
                 item { SectionHeader("${filtered.size} apps with dangerous permissions") }
@@ -72,7 +77,7 @@ fun PermissionsAuditScreen(onBack: () -> Unit) {
 @Composable
 private fun PermissionRow(app: AppPermissionEntry) {
     GlassSurface(Modifier.fillMaxWidth()) {
-        Column {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
             Text(app.label, style = MaterialTheme.typography.titleSmall)
             Text(app.packageName, style = MaterialTheme.typography.bodySmall)
             Text(app.permissions.map { PermissionsAuditProvider.categoryOf(it) }.distinct().joinToString(" • "),
@@ -99,14 +104,14 @@ fun CrashLogScreen(onBack: () -> Unit) {
 @Composable
 private fun CrashRow(c: CrashEntry) {
     GlassSurface(Modifier.fillMaxWidth()) {
-        Column {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (c.type == "anr") "ANR" else "Crash", style = MaterialTheme.typography.labelSmall,
                     color = if (c.type == "anr") MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error)
                 Text("  ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(c.time))}",
                     style = MaterialTheme.typography.labelSmall)
                 Text("  ${c.packageName}", style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(c.message, style = MaterialTheme.typography.bodyMedium)
             Text(c.snippet, style = MaterialTheme.typography.labelSmall,
@@ -117,14 +122,15 @@ private fun CrashRow(c: CrashEntry) {
 
 @Composable
 fun BatteryHistoryScreen(onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
     ScreenScaffold("Battery History", onBack,
-        actions = { TextButton(onClick = { runBlocking { BatteryHistoryRepository.clear() } }) { Text("Clear") } }) { padding ->
+        actions = { TextButton(onClick = { scope.launch { BatteryHistoryRepository.clear() } }) { Text("Clear") } }) { padding ->
         val samples by BatteryHistoryRepository.samples().collectAsStateWithLifecycle(emptyList())
         ScrollColumn(padding) {
             val points = samples.map { it.level.toFloat() }
             if (points.size >= 2) {
                 GlassSurface(Modifier.fillMaxWidth()) {
-                    Column {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                         SectionHeader("Battery level over time", "${points.first().toInt()}% → ${points.last().toInt()}%")
                         LineChart(points)
                     }
@@ -153,14 +159,14 @@ fun ChangelogScreen(onBack: () -> Unit) {
                 items(releases.size, key = { releases[it].tagName }) { i ->
                     val r = releases[i]
                     GlassSurface(Modifier.fillMaxWidth()) {
-                        Column {
+                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
                             Text(r.name.ifBlank { r.tagName }, style = MaterialTheme.typography.titleSmall)
                             Text(r.tagName + (r.publishedAt?.let { " • ${it.take(10)}" } ?: ""),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = com.icy.icycheak.ui.theme.LocalTheme.current.accent)
                             Text(r.body.take(400).ifBlank { "No notes provided." },
                                 style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(top = 4.dp))
+                                modifier = Modifier.padding(top = AppSpacing.extraSmall))
                         }
                     }
                 }

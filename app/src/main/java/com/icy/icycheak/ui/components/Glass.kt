@@ -9,7 +9,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,19 +19,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.State
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -42,6 +35,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.icy.icycheak.ui.theme.AppSpacing
 import com.icy.icycheak.ui.theme.LocalScrolling
 import com.icy.icycheak.ui.theme.LocalTheme
 
@@ -73,7 +67,7 @@ fun GlassSurface(
     val liquid = theme.liquidGlass
     val bg = if (liquid) MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
     else MaterialTheme.colorScheme.surface
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(AppSpacing.cardRadius)
 
     Surface(
         color = bg,
@@ -100,7 +94,7 @@ fun GlassSurface(
                         )
                 )
             }
-            Box(Modifier.padding(14.dp)) { content() }
+            Box(Modifier.padding(AppSpacing.cardPadding)) { content() }
         }
     }
 }
@@ -108,7 +102,7 @@ fun GlassSurface(
 @Composable
 fun SectionHeader(title: String, subtitle: String? = null, trailing: @Composable (() -> Unit)? = null) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = AppSpacing.small, vertical = AppSpacing.extraSmall),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
@@ -149,11 +143,11 @@ fun InfoRowView(label: String, value: String, emphasized: Boolean = false, warni
 
 @Composable
 fun LoadingSkeleton() {
-    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxWidth().padding(AppSpacing.large), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         repeat(6) {
             Box(
                 Modifier.fillMaxWidth().height(46.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(AppSpacing.dialogOptionRadius))
             )
         }
     }
@@ -173,7 +167,7 @@ fun WarningNote(message: String) {
     GlassSurface(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("⚠️", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(AppSpacing.small))
             Text(message, style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFFD29922))
         }
@@ -185,16 +179,16 @@ fun ErrorState(message: String, onRetry: (() -> Unit)? = null) {
     Column(
         Modifier.fillMaxWidth().padding(40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.medium)
     ) {
         Text(message, style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFFF85149))
         onRetry?.let {
             Surface(
-                color = LocalTheme.current.accent, shape = RoundedCornerShape(10.dp),
+                color = LocalTheme.current.accent, shape = RoundedCornerShape(AppSpacing.chipRadius),
                 modifier = Modifier.clickable(onClick = it)
             ) {
-                Text("Retry", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = Color.White)
+                Text("Retry", Modifier.padding(horizontal = AppSpacing.large, vertical = AppSpacing.small), color = Color.White)
             }
         }
     }
@@ -264,11 +258,11 @@ fun SurfaceChip(
     val border = if (selected) theme.accent else MaterialTheme.colorScheme.outline
     Box(
         Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(AppSpacing.chipRadius))
             .background(bg)
-            .border(1.dp, border, RoundedCornerShape(10.dp))
+            .border(1.dp, border, RoundedCornerShape(AppSpacing.chipRadius))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .padding(horizontal = AppSpacing.cardPadding, vertical = AppSpacing.small)
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium,
             color = if (selected) theme.accent else MaterialTheme.colorScheme.onSurfaceVariant)

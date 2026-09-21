@@ -14,7 +14,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.icycheak.data.providers.DeviceRepository
 import com.icy.icycheak.data.providers.ExportStore
@@ -25,6 +24,7 @@ import com.icy.icycheak.ui.components.ScrollColumn
 import com.icy.icycheak.ui.components.SectionHeader
 import com.icy.icycheak.ui.components.SurfaceChip
 import com.icy.icycheak.ui.components.WarningNote
+import com.icy.icycheak.ui.theme.AppSpacing
 
 @Composable
 fun CompareExportsScreen(onBack: () -> Unit) {
@@ -38,10 +38,13 @@ fun CompareExportsScreen(onBack: () -> Unit) {
 
         ScrollColumn(padding) {
             GlassSurface(Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                     SectionHeader("Pick two saved reports", if (phase == 0) "choose OLD" else "choose NEW")
                     if (exports.isEmpty()) WarningNote("No saved exports yet. Export a report from the Dashboard / share sheet first.")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.small),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         exports.forEach { e ->
                             val selected = e == pickA || e == pickB
                             SurfaceChip(selected = selected, label = e.name) {
@@ -58,12 +61,12 @@ fun CompareExportsScreen(onBack: () -> Unit) {
                 if (diff.isEmpty()) WarningNote("No differences detected between the two reports.")
                 diff.forEach { d ->
                     GlassSurface(Modifier.fillMaxWidth()) {
-                        Column {
+                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
                             Text("${d.category} · ${d.label}", style = MaterialTheme.typography.titleSmall)
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text(d.oldValue, style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("→", modifier = Modifier.padding(horizontal = 8.dp))
+                                Text("→", modifier = Modifier.padding(horizontal = AppSpacing.small))
                                 Text(d.newValue, style = MaterialTheme.typography.bodyMedium,
                                     modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.primary)
                             }

@@ -16,7 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import com.icy.icycheak.ui.theme.AppSpacing
 import com.icy.icycheak.ui.theme.LocalTheme
 
 data class PickerOption(
@@ -44,19 +44,19 @@ fun OptionDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
         title = { Text(title, fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                 options.forEach { opt ->
                     val selected = opt.id == selectedId
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(AppSpacing.dialogOptionRadius))
                             .clickable(enabled = opt.enabled) { if (opt.enabled) onPick(opt.id) }
-                            .padding(12.dp),
+                            .padding(AppSpacing.medium),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = selected, enabled = opt.enabled, onClick = null)
-                        Column(Modifier.padding(start = 8.dp)) {
+                        Column(Modifier.padding(start = AppSpacing.small)) {
                             Text(opt.title, fontWeight = FontWeight.SemiBold,
                                 color = if (opt.enabled) theme.accent else androidx.compose.ui.graphics.Color.Gray)
                             Text(opt.description, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
@@ -75,7 +75,7 @@ fun SegmentedChips(
     selectedId: String,
     onPick: (String) -> Unit
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
         options.forEach { opt ->
             val selected = opt.id == selectedId
             SurfaceChip(selected = selected, label = opt.title, enabled = opt.enabled) {
