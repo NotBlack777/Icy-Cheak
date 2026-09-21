@@ -2,6 +2,8 @@ package com.icy.icycheak.data.settings
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -40,16 +42,39 @@ data class ThemeConfig(
 )
 
 object AppSettings {
-    private lateinit var appContext: Context
-    private val store by lazy { appContext.dataStore }
+    /*
+     * Do not create any DataStore-backed Flow in this object's class initializer.
+     * Kotlin initializes an object before invoking the first method on it, so an
+     * eager `store.data.map { ... }` property would run before Application.onCreate
+     * has a chance to call init(context). That was the source of the cold-start
+     * crash: the old lazy store read a lateinit Context during <clinit>.
+     */
+    @Volatile
+    private var initializedStore: DataStore<Preferences>? = null
+
+    private val store: DataStore<Preferences>
+        get() = checkNotNull(initializedStore) {
+            "AppSettings.init(context) must be called from Application.onCreate() before settings are accessed"
+        }
+
+    /**
+     * Install the application-scoped DataStore before any setting is accessed.
+     * The first call wins so already-created Flow instances cannot be detached
+     * from the store they were built from.
+     */
+    fun init(context: Context) {
+        if (initializedStore == null) {
+            synchronized(this) {
+                if (initializedStore == null) {
+                    initializedStore = context.applicationContext.dataStore
+                }
+            }
+        }
+    }
 
     /** Build a Compose [Color] from an ARGB value stored as a signed Long/Int. */
     private fun colorFromArgb(v: Long): Color =
         Color((v and 0xFFFFFFFFL).toULong())
-
-    fun init(context: Context) {
-        appContext = context.applicationContext
-    }
 
     // ---- keys ----
     private val KEY_ACCENT = stringPreferencesKey("accent_hex")
@@ -73,59 +98,64 @@ object AppSettings {
     private val KEY_UPDATE_SEEN_VERSION = stringPreferencesKey("update_seen_version")
 
     // ---- individual flows ----
-    val accentHex: Flow<String> = store.data.map { it[KEY_ACCENT] ?: "#FF8A00" }
-    val gradientPresetId: Flow<String> = store.data.map { it[KEY_GRADIENT_PRESET] ?: "sunset" }
-    val customGradientEnabled: Flow<Boolean> = store.data.map { it[KEY_CUSTOM_GRADIENT_ON] ?: false }
-    val customGradientA: Flow<Long> = store.data.map { it[KEY_CUSTOM_GRADIENT_A] ?: 0xFFFF8A00.toLong() }
-    val customGradientB: Flow<Long> = store.data.map { it[KEY_CUSTOM_GRADIENT_B] ?: 0xFFE9408A.toLong() }
-    val ambientStyleId: Flow<String> = store.data.map { it[KEY_AMBIENT] ?: AmbientStyle.AURORA.name }
-    val oledMode: Flow<Boolean> = store.data.map { it[KEY_OLED] ?: false }
-    val darkModeName: Flow<String> = store.data.map { it[KEY_DARK] ?: DarkMode.SYSTEM.name }
-    val liquidGlass: Flow<Boolean> = store.data.map { it[KEY_LIQUID_GLASS] ?: true }
-    val hapticsEnabled: Flow<Boolean> = store.data.map { it[KEY_HAPTICS] ?: true }
-    val refreshRateMs: Flow<Long> = store.data.map { it[KEY_REFRESH_MS] ?: 1000L }
-    val liveGraphsEnabled: Flow<Boolean> = store.data.map { it[KEY_LIVE_GRAPHS] ?: true }
-    val lastInstallMethod: Flow<String> = store.data.map { it[KEY_LAST_INSTALL] ?: InstallMethod.PACKAGE.name }
-    val pinnedItems: Flow<Set<String>> = store.data.map { it[KEY_PINNED] ?: emptySet() }
-    val searchHistory: Flow<List<String>> = store.data.map { it[KEY_SEARCH_HISTORY]?.toList()?.reversed() ?: emptyList() }
-    val onboardingSeen: Flow<Set<String>> = store.data.map { it[KEY_ONBOARDING_SEEN] ?: emptySet() }
-    val publicIpOptIn: Flow<Boolean> = store.data.map { it[KEY_PUBLIC_IP] ?: false }
+    // These are lazy so loading AppSettings itself never touches DataStore;
+    // init(context) has already installed the application context by the time a
+    // setting is first observed.
+    val accentHex: Flow<String> by lazy { store.data.map { it[KEY_ACCENT] ?: "#FF8A00" } }
+    val gradientPresetId: Flow<String> by lazy { store.data.map { it[KEY_GRADIENT_PRESET] ?: "sunset" } }
+    val customGradientEnabled: Flow<Boolean> by lazy { store.data.map { it[KEY_CUSTOM_GRADIENT_ON] ?: false } }
+    val customGradientA: Flow<Long> by lazy { store.data.map { it[KEY_CUSTOM_GRADIENT_A] ?: 0xFFFF8A00.toLong() } }
+    val customGradientB: Flow<Long> by lazy { store.data.map { it[KEY_CUSTOM_GRADIENT_B] ?: 0xFFE9408A.toLong() } }
+    val ambientStyleId: Flow<String> by lazy { store.data.map { it[KEY_AMBIENT] ?: AmbientStyle.AURORA.name } }
+    val oledMode: Flow<Boolean> by lazy { store.data.map { it[KEY_OLED] ?: false } }
+    val darkModeName: Flow<String> by lazy { store.data.map { it[KEY_DARK] ?: DarkMode.SYSTEM.name } }
+    val liquidGlass: Flow<Boolean> by lazy { store.data.map { it[KEY_LIQUID_GLASS] ?: true } }
+    val hapticsEnabled: Flow<Boolean> by lazy { store.data.map { it[KEY_HAPTICS] ?: true } }
+    val refreshRateMs: Flow<Long> by lazy { store.data.map { it[KEY_REFRESH_MS] ?: 1000L } }
+    val liveGraphsEnabled: Flow<Boolean> by lazy { store.data.map { it[KEY_LIVE_GRAPHS] ?: true } }
+    val lastInstallMethod: Flow<String> by lazy { store.data.map { it[KEY_LAST_INSTALL] ?: InstallMethod.PACKAGE.name } }
+    val pinnedItems: Flow<Set<String>> by lazy { store.data.map { it[KEY_PINNED] ?: emptySet() } }
+    val searchHistory: Flow<List<String>> by lazy { store.data.map { it[KEY_SEARCH_HISTORY]?.toList()?.reversed() ?: emptyList() } }
+    val onboardingSeen: Flow<Set<String>> by lazy { store.data.map { it[KEY_ONBOARDING_SEEN] ?: emptySet() } }
+    val publicIpOptIn: Flow<Boolean> by lazy { store.data.map { it[KEY_PUBLIC_IP] ?: false } }
 
     // ---- combined theme config ----
     // The vararg combine() requires same-typed flows, but ours are mixed types.
     // We build an array of Flow<Any> and cast back in the transform.
     @Suppress("UNCHECKED_CAST")
-    val themeConfig: Flow<ThemeConfig> = kotlinx.coroutines.flow.combine(
-        *arrayOf(
-            accentHex as Flow<Any>, gradientPresetId as Flow<Any>,
-            customGradientEnabled as Flow<Any>, customGradientA as Flow<Any>,
-            customGradientB as Flow<Any>, ambientStyleId as Flow<Any>,
-            oledMode as Flow<Any>, darkModeName as Flow<Any>,
-            liquidGlass as Flow<Any>, hapticsEnabled as Flow<Any>
-        )
-    ) { values ->
-        val a = values[0] as String
-        val g = values[1] as String
-        val cgOn = values[2] as Boolean
-        val cgA = values[3] as Long
-        val cgB = values[4] as Long
-        val amb = values[5] as String
-        val oled = values[6] as Boolean
-        val dark = values[7] as String
-        val lg = values[8] as Boolean
-        val hap = values[9] as Boolean
-        ThemeConfig(
-            accent = colorFromArgb(android.graphics.Color.parseColor(a).toLong()),
-            gradientPresetId = g,
-            customGradientEnabled = cgOn,
-            customGradientA = colorFromArgb(cgA),
-            customGradientB = colorFromArgb(cgB),
-            ambientStyle = runCatching { AmbientStyle.valueOf(amb) }.getOrDefault(AmbientStyle.AURORA),
-            oled = oled,
-            darkMode = runCatching { DarkMode.valueOf(dark) }.getOrDefault(DarkMode.SYSTEM),
-            liquidGlass = lg,
-            haptics = hap
-        )
+    val themeConfig: Flow<ThemeConfig> by lazy {
+        combine(
+            *arrayOf(
+                accentHex as Flow<Any>, gradientPresetId as Flow<Any>,
+                customGradientEnabled as Flow<Any>, customGradientA as Flow<Any>,
+                customGradientB as Flow<Any>, ambientStyleId as Flow<Any>,
+                oledMode as Flow<Any>, darkModeName as Flow<Any>,
+                liquidGlass as Flow<Any>, hapticsEnabled as Flow<Any>
+            )
+        ) { values ->
+            val a = values[0] as String
+            val g = values[1] as String
+            val cgOn = values[2] as Boolean
+            val cgA = values[3] as Long
+            val cgB = values[4] as Long
+            val amb = values[5] as String
+            val oled = values[6] as Boolean
+            val dark = values[7] as String
+            val lg = values[8] as Boolean
+            val hap = values[9] as Boolean
+            ThemeConfig(
+                accent = colorFromArgb(android.graphics.Color.parseColor(a).toLong()),
+                gradientPresetId = g,
+                customGradientEnabled = cgOn,
+                customGradientA = colorFromArgb(cgA),
+                customGradientB = colorFromArgb(cgB),
+                ambientStyle = runCatching { AmbientStyle.valueOf(amb) }.getOrDefault(AmbientStyle.AURORA),
+                oled = oled,
+                darkMode = runCatching { DarkMode.valueOf(dark) }.getOrDefault(DarkMode.SYSTEM),
+                liquidGlass = lg,
+                haptics = hap
+            )
+        }
     }
 
     // ---- setters ----
@@ -189,18 +219,20 @@ object AppSettings {
     }
 
     /** True when an update is available and NOT yet marked seen/dismissed. */
-    val isUpdatePending: Flow<Boolean> = store.data.map { prefs ->
-        val json = prefs[KEY_UPDATE_AVAILABLE]
-        val seen = prefs[KEY_UPDATE_SEEN_VERSION]
-        if (json.isNullOrBlank()) false
-        else {
-            val ver = runCatching { org.json.JSONObject(json).optString("tag_name", "") }.getOrDefault("")
-            ver.isNotEmpty() && ver != seen
+    val isUpdatePending: Flow<Boolean> by lazy {
+        store.data.map { prefs ->
+            val json = prefs[KEY_UPDATE_AVAILABLE]
+            val seen = prefs[KEY_UPDATE_SEEN_VERSION]
+            if (json.isNullOrBlank()) false
+            else {
+                val ver = runCatching { org.json.JSONObject(json).optString("tag_name", "") }.getOrDefault("")
+                ver.isNotEmpty() && ver != seen
+            }
         }
     }
 
     /** The persisted available-release JSON (or null). */
-    val updateAvailableJson: Flow<String?> = store.data.map { it[KEY_UPDATE_AVAILABLE] }
+    val updateAvailableJson: Flow<String?> by lazy { store.data.map { it[KEY_UPDATE_AVAILABLE] } }
 
     /** Mark the currently-available update as seen/dismissed (does not clear availability). */
     suspend fun markUpdateSeen() = store.edit { prefs ->
