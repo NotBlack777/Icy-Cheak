@@ -5,12 +5,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.icy.icycheak.data.providers.DevEnvironmentProvider
 import com.icy.icycheak.data.settings.AmbientStyle
 import com.icy.icycheak.data.settings.AppSettings
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -57,6 +60,26 @@ class StartupSmokeTest {
                 assertEquals("sunset", theme.gradientPresetId)
                 assertEquals(AmbientStyle.AURORA, theme.ambientStyle)
                 assertEquals(false, theme.oled)
+            }
+        }
+    }
+
+    @Test
+    fun representativeUserFlows_exerciseDevEnvironmentAndSettings() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            assertEquals(Lifecycle.State.RESUMED, scenario.state)
+
+            runBlocking {
+                // Exercise Dev Environment scan
+                val tools = DevEnvironmentProvider.getDevTools()
+                assertNotNull(tools)
+                assertTrue("Dev tools list should not be empty", tools.isNotEmpty())
+
+                // Exercise changing and reading Settings state
+                AppSettings.setRefreshRate(2000L)
+                assertEquals(2000L, AppSettings.refreshRateMs.first())
+                AppSettings.setRefreshRate(1000L)
+                assertEquals(1000L, AppSettings.refreshRateMs.first())
             }
         }
     }
