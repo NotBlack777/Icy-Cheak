@@ -17,7 +17,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.icycheak.data.providers.BatteryProvider
 import com.icy.icycheak.data.providers.DevEnvironmentProvider
@@ -36,6 +35,7 @@ import com.icy.icycheak.ui.components.ScreenScaffold
 import com.icy.icycheak.ui.components.ScrollColumn
 import com.icy.icycheak.ui.components.SectionHeader
 import com.icy.icycheak.ui.components.WarningNote
+import com.icy.icycheak.ui.theme.AppSpacing
 import com.icy.icycheak.ui.theme.LocalTheme
 import kotlinx.coroutines.launch
 
@@ -179,10 +179,10 @@ fun SensorsScreen(onBack: () -> Unit) {
                     }
                     list.forEach { s ->
                         GlassSurface(Modifier.fillMaxWidth()) {
-                            Column {
+                            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
                                 Text(s.name, style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
                                 Text("${s.type} • ${s.vendor}", style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.medium), verticalAlignment = Alignment.CenterVertically) {
                                     Text("Range: ${s.range}", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
                                     Text("Power: ${s.powerMa}", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
                                 }
@@ -206,7 +206,7 @@ fun DevEnvironmentScreen(onBack: () -> Unit) {
                 tools.forEach { tool ->
                     GlassSurface(Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
                                 Text(tool.displayName, style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
                                 if (tool.found) {
                                     val src = sourceLabel(tool.source)
@@ -220,8 +220,12 @@ fun DevEnvironmentScreen(onBack: () -> Unit) {
                                 }
                             }
                             if (tool.path != null) {
-                                Text(tool.path, style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(start = 8.dp).weight(1f))
+                                Text(
+                                    tool.path,
+                                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                    modifier = Modifier.padding(start = AppSpacing.small).weight(1f)
+                                )
                             }
                         }
                     }

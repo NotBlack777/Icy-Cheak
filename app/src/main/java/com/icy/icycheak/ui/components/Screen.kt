@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
@@ -28,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.icy.icycheak.model.InfoRow
+import com.icy.icycheak.ui.theme.AppSpacing
 import com.icy.icycheak.ui.theme.LocalScrolling
 
 sealed interface LoadState<out T> {
@@ -115,21 +115,21 @@ fun InfoCard(title: String, subtitle: String? = null, rows: List<InfoRow>) {
 /** Convenience: a vertically-scrolling column that pauses ambient on scroll. */
 @Composable
 fun ScrollColumn(
-    contentPadding: PaddingValues = PaddingValues(12.dp),
+    contentPadding: PaddingValues = PaddingValues(AppSpacing.screenPadding),
     content: @Composable () -> Unit
 ) {
     val scroll = rememberScrollState()
     LocalScrolling.current.value = scroll.isScrollInProgress
     Column(
         Modifier.fillMaxSize().padding(contentPadding),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.medium)
     ) { content() }
 }
 
 /** Lazy variant for long lists; also pauses ambient while scrolling. */
 @Composable
 fun ScrollLazyColumn(
-    contentPadding: PaddingValues = PaddingValues(12.dp),
+    contentPadding: PaddingValues = PaddingValues(AppSpacing.screenPadding),
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit
 ) {
     val state = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -137,6 +137,6 @@ fun ScrollLazyColumn(
     androidx.compose.foundation.lazy.LazyColumn(
         state = state,
         modifier = Modifier.fillMaxSize().padding(contentPadding),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.medium)
     ) { content() }
 }

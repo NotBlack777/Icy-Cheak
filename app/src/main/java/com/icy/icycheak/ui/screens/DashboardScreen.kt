@@ -19,7 +19,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.icycheak.data.settings.AppSettings
 import com.icy.icycheak.data.ticker.LiveTicker
@@ -27,6 +26,7 @@ import com.icy.icycheak.model.CategoryId
 import com.icy.icycheak.ui.components.GlassSurface
 import com.icy.icycheak.ui.components.ScreenScaffold
 import com.icy.icycheak.ui.components.SectionHeader
+import com.icy.icycheak.ui.theme.AppSpacing
 import com.icy.icycheak.ui.theme.LocalTheme
 import kotlinx.coroutines.launch
 
@@ -37,9 +37,12 @@ fun DashboardScreen(onNavigate: (String) -> Unit) {
         val pinned by AppSettings.pinnedItems.collectAsStateWithLifecycle(emptySet())
         val scope = rememberCoroutineScope()
 
-        Column(Modifier.fillMaxSize().padding(padding).padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(AppSpacing.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.medium)
+        ) {
             // Live snapshot cards
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                 LiveMetricCard("Battery", "${metrics.batteryLevel}%", Modifier.weight(1f))
                 LiveMetricCard("RAM", "${metrics.ramUsedBytes / 1_000_000} MB", Modifier.weight(1f),
                     sub = "of ${metrics.ramTotalBytes / 1_000_000} MB")
@@ -51,8 +54,12 @@ fun DashboardScreen(onNavigate: (String) -> Unit) {
             SectionHeader("Pinned", "tap a category to open • long-press to unpin")
             val pinnedCats = CategoryId.entries.filter { it.id in pinned && it != CategoryId.DASHBOARD }
             if (pinnedCats.isEmpty()) {
-                Text("No pinned items. Long-press any category below to pin it to the top.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "No pinned items. Long-press any category below to pin it to the top.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = AppSpacing.small)
+                )
             } else {
                 CategoryGrid(pinnedCats, onNavigate, onTogglePin = { id ->
                     scope.launch { AppSettings.togglePin(id) }
@@ -73,7 +80,7 @@ fun DashboardScreen(onNavigate: (String) -> Unit) {
 @Composable
 private fun LiveMetricCard(label: String, value: String, modifier: Modifier = Modifier.fillMaxWidth(), sub: String? = null) {
     GlassSurface(modifier) {
-        Column {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
             Text(label.uppercase(), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.titleLarge, color = LocalTheme.current.accent)
@@ -93,8 +100,8 @@ private fun CategoryGrid(
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.small),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.small),
         modifier = Modifier.fillMaxWidth()
     ) {
         items(items, key = { it.id }) { cat ->
@@ -109,11 +116,16 @@ private fun CategoryGrid(
                 GlassSurface(Modifier.fillMaxWidth()) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth().padding(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall),
+                        modifier = Modifier.fillMaxWidth().padding(AppSpacing.small)
                     ) {
                         Text(cat.icon, style = MaterialTheme.typography.titleLarge)
-                        Text(cat.title, style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            cat.title,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
                     }
                 }
             }

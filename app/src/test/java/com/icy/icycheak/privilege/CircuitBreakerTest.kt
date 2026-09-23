@@ -95,6 +95,22 @@ class CircuitBreakerTest {
         assertEquals(21_000L, cb.openUntil()) // 11_000 + 10_000
     }
 
+    @Test
+    fun halfOpen_queryMultipleTimesBeforeAttempt_remainsHalfOpen() {
+        repeat(3) { cb.recordFailure(now = 100L) }
+        // tripped, openUntil = 10100
+        assertTrue(cb.isOpen(now = 5_000L))
+        // First check after expiry triggers half-open
+        assertFalse(cb.isOpen(now = 11_000L))
+        // Subsequent checks before an attempt still allow the probe call
+        assertFalse(cb.isOpen(now = 11_050L))
+        assertFalse(cb.isOpen(now = 11_100L))
+        // Now failure happens in half-open
+        cb.recordFailure(now = 11_200L)
+        assertTrue(cb.isOpen(now = 11_300L))
+        assertEquals(21_200L, cb.openUntil())
+    }
+
     // ---- recordSuccess resets failure counter ----------------------------
 
     @Test

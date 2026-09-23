@@ -35,7 +35,6 @@ import com.icy.icycheak.data.settings.AppSettings
 import com.icy.icycheak.data.settings.DarkMode
 import com.icy.icycheak.data.settings.InstallMethod
 import com.icy.icycheak.privilege.PrivilegeEngine
-import com.icy.icycheak.privilege.PrivilegeMode
 import com.icy.icycheak.ui.components.GlassSurface
 import com.icy.icycheak.ui.components.OptionDialog
 import com.icy.icycheak.ui.components.PickerOption
@@ -45,6 +44,7 @@ import com.icy.icycheak.ui.components.ScrollColumn
 import com.icy.icycheak.ui.components.SectionHeader
 import com.icy.icycheak.ui.components.SegmentedChips
 import com.icy.icycheak.ui.components.SurfaceChip
+import com.icy.icycheak.ui.theme.AppSpacing
 import com.icy.icycheak.ui.theme.GradientPresets
 import com.icy.icycheak.ui.theme.LocalTheme
 import com.icy.icycheak.ui.viewmodel.UpdaterState
@@ -85,7 +85,7 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
         ScrollColumn(padding) {
             // ---- Colors & Theming ----
             GlassSurface(Modifier.fillMaxWidth()) {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                     SectionHeader("Colors & Theming", "rendering style")
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -117,7 +117,7 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                             }
                         })
                     }
-                    Text("Dark mode", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                    Text("Dark mode", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = AppSpacing.extraSmall))
                     SegmentedChips(
                         options = listOf(
                             PickerOption(DarkMode.SYSTEM.name, "System", "Follow system setting"),
@@ -127,8 +127,8 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                         selectedId = darkMode
                     ) { scope.launch { AppSettings.setDarkMode(DarkMode.valueOf(it)) } }
 
-                    Text("Accent color", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Accent color", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = AppSpacing.extraSmall))
+                    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.small), verticalAlignment = Alignment.CenterVertically) {
                         ACCENTS.forEach { (hex, _) ->
                             val selected = accent.equals("#$hex", true)
                             Box(
@@ -146,8 +146,8 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                         }
                     }
 
-                    Text("Gradient preset", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("Gradient preset", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = AppSpacing.extraSmall))
+                    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.small), modifier = Modifier.fillMaxWidth()) {
                         GradientPresets.ids().forEach { id ->
                             SurfaceChip(selected = gradPreset == id && !customOn, label = id) {
                                 scope.launch {
@@ -163,22 +163,22 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                     }
                     if (customOn) {
                         Text("Start", style = MaterialTheme.typography.labelSmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.small), verticalAlignment = Alignment.CenterVertically) {
                             ACCENTS.forEach { (hex, _) ->
                                 Box(Modifier.size(30.dp).clip(CircleShape).background(Color(android.graphics.Color.parseColor("#$hex")))
                                     .clickable { scope.launch { AppSettings.setCustomGradient(true, android.graphics.Color.parseColor("#$hex").toLong(), customB) } })
                             }
                         }
-                        Text("End", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("End", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = AppSpacing.extraSmall))
+                        Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.small), verticalAlignment = Alignment.CenterVertically) {
                             ACCENTS.forEach { (hex, _) ->
                                 Box(Modifier.size(30.dp).clip(CircleShape).background(Color(android.graphics.Color.parseColor("#$hex")))
                                     .clickable { scope.launch { AppSettings.setCustomGradient(true, customA, android.graphics.Color.parseColor("#$hex").toLong()) } })
                             }
                         }
                     }
-                    Text("Ambient background", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("Ambient background", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = AppSpacing.extraSmall))
+                    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.small), modifier = Modifier.fillMaxWidth()) {
                         AmbientStyle.entries.forEach { s ->
                             SurfaceChip(selected = ambient == s.name, label = s.name.lowercase()) {
                                 scope.launch { AppSettings.setAmbientStyle(s) }
@@ -190,7 +190,7 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
 
             // ---- Live telemetry ----
             GlassSurface(Modifier.fillMaxWidth()) {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                     SectionHeader("Live telemetry")
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -199,7 +199,7 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                         }
                         Switch(checked = liveGraphs, onCheckedChange = { scope.launch { AppSettings.setLiveGraphs(it) } })
                     }
-                    Text("Refresh rate: $refreshMs ms", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                    Text("Refresh rate: $refreshMs ms", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = AppSpacing.extraSmall))
                     Slider(
                         value = refreshMs.toFloat(),
                         onValueChange = { scope.launch { AppSettings.setRefreshRate(it.toLong()) } },
@@ -215,7 +215,7 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                         Text("Privilege mode", style = MaterialTheme.typography.titleSmall)
                         Text("${status.preferredMode} • active: ${status.activeMode}", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Change", color = theme.accent)
+                    Text("Change", color = theme.accent, style = MaterialTheme.typography.labelLarge)
                 }
             }
             GlassSurface(Modifier.fillMaxWidth().clickable { showInstall = true }) {
@@ -224,13 +224,13 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                         Text("Default install method", style = MaterialTheme.typography.titleSmall)
                         Text(InstallMethod.valueOf(lastInstall).name.lowercase(), style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Change", color = theme.accent)
+                    Text("Change", color = theme.accent, style = MaterialTheme.typography.labelLarge)
                 }
             }
 
             // ---- Updates ----
             GlassSurface(Modifier.fillMaxWidth()) {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                     SectionHeader("Updates", "version ${BuildConfig.VERSION_NAME}")
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -264,9 +264,13 @@ fun SettingsScreen(onBack: () -> Unit, updater: UpdaterViewModel) {
                     Switch(checked = haptics, onCheckedChange = { scope.launch { AppSettings.setHaptics(it) } })
                 }
             }
-            Text("Icy Cheak is 100% free, ad-free, no analytics or tracking.",
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(8.dp))
+            Text(
+                "Icy Cheak is 100% free, ad-free, no analytics or tracking.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(AppSpacing.small),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
     }
 

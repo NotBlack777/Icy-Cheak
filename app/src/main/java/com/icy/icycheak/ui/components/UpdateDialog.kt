@@ -1,12 +1,15 @@
 package com.icy.icycheak.ui.components
 
-import android.content.Context
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.icycheak.data.settings.AppSettings
@@ -46,10 +49,13 @@ fun UpdateDialog(updater: UpdaterViewModel) {
             confirmButton = {}
         )
         is UpdaterState.Ready -> {
-            val last = kotlinx.coroutines.runBlocking { AppSettings.lastInstallMethod.first() }
+            var lastInstallMethod by remember { mutableStateOf(InstallMethod.PACKAGE.name) }
+            LaunchedEffect(Unit) {
+                lastInstallMethod = AppSettings.lastInstallMethod.first()
+            }
             val preselect = when {
-                status.rootGranted && last == InstallMethod.ROOT.name -> InstallMethod.ROOT.name
-                status.shizukuGranted && last == InstallMethod.SHIZUKU.name -> InstallMethod.SHIZUKU.name
+                status.rootGranted && lastInstallMethod == InstallMethod.ROOT.name -> InstallMethod.ROOT.name
+                status.shizukuGranted && lastInstallMethod == InstallMethod.SHIZUKU.name -> InstallMethod.SHIZUKU.name
                 else -> InstallMethod.PACKAGE.name
             }
             OptionDialog(
@@ -78,7 +84,7 @@ fun UpdateDialog(updater: UpdaterViewModel) {
         )
         is UpdaterState.Success -> {
             // Auto-dismiss once the installer has been launched.
-            androidx.compose.runtime.LaunchedEffect(Unit) { updater.dismissDialog() }
+            LaunchedEffect(Unit) { updater.dismissDialog() }
         }
         else -> {}
     }

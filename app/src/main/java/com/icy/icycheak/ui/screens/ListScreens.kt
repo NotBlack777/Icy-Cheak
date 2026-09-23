@@ -19,8 +19,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.icycheak.data.providers.AppManagementProvider
 import com.icy.icycheak.data.providers.InstalledAppsProvider
 import com.icy.icycheak.data.providers.ProcessProvider
@@ -31,8 +29,8 @@ import com.icy.icycheak.ui.components.GlassSurface
 import com.icy.icycheak.ui.components.LoadableContent
 import com.icy.icycheak.ui.components.ScreenScaffold
 import com.icy.icycheak.ui.components.ScrollLazyColumn
-import com.icy.icycheak.ui.components.SectionHeader
 import com.icy.icycheak.ui.components.WarningNote
+import com.icy.icycheak.ui.theme.AppSpacing
 import kotlinx.coroutines.launch
 
 @Composable
@@ -55,11 +53,11 @@ fun ProcessesScreen(onBack: () -> Unit) {
 private fun ProcessRow(p: ProcessInfo) {
     GlassSurface(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
                 Text(p.name, style = MaterialTheme.typography.titleSmall)
                 Text("PID ${p.pid} • ${p.user}", style = MaterialTheme.typography.bodySmall)
             }
-            Column(horizontalAlignment = Alignment.End) {
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
                 Text("%.1f%%".format(p.cpuPercent), style = MaterialTheme.typography.titleSmall)
                 Text(formatBytes(p.rssBytes), style = MaterialTheme.typography.bodySmall)
             }
@@ -78,7 +76,7 @@ fun InstalledAppsScreen(onBack: () -> Unit) {
                     val a = apps[i]
                     GlassSurface(Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f).padding(4.dp)) {
+                            Column(Modifier.weight(1f).padding(end = AppSpacing.small), verticalArrangement = Arrangement.spacedBy(AppSpacing.extraSmall)) {
                                 Text(a.label, style = MaterialTheme.typography.titleSmall)
                                 Text(a.packageName, style = MaterialTheme.typography.bodySmall)
                                 Text(
@@ -109,7 +107,7 @@ private fun AppActionDialog(app: AppInfo, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text(app.label) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                 Text("Package: ${app.packageName}")
                 Text("Version: ${app.versionName} (${app.versionCode})")
                 Text("Size: ${formatBytes(app.apkSizeBytes)}")

@@ -23,9 +23,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.icy.icycheak.data.providers.ConsoleHistoryStore
 import com.icy.icycheak.data.providers.ShellScriptStore
@@ -36,6 +36,7 @@ import com.icy.icycheak.ui.components.OnboardingNote
 import com.icy.icycheak.ui.components.ScreenScaffold
 import com.icy.icycheak.ui.components.SectionHeader
 import com.icy.icycheak.ui.components.SurfaceChip
+import com.icy.icycheak.ui.theme.AppSpacing
 import kotlinx.coroutines.launch
 
 @Composable
@@ -69,14 +70,17 @@ fun ConsoleScreen(onBack: () -> Unit) {
             }
         }
 
-        Column(Modifier.fillMaxSize().padding(padding).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(AppSpacing.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.medium)
+        ) {
             OnboardingNote(
                 feature = "console",
                 title = "Console access",
                 body = "Run shell commands directly. With root or Shizuku you get elevated access to system-level commands. Without elevation, commands run as a normal app user."
             )
             GlassSurface(Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                     OutlinedTextField(
                         value = command, onValueChange = { command = it },
                         label = { Text("Command") },
@@ -84,14 +88,21 @@ fun ConsoleScreen(onBack: () -> Unit) {
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                         keyboardActions = KeyboardActions(onGo = { runCmd() })
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.small),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Button(onClick = { runCmd() }, enabled = !running && command.isNotBlank()) { Text(if (running) "Running\u2026" else "Run") }
                         Button(onClick = { if (command.isNotBlank()) { saveName = command.take(20); showSave = true } }) { Text("Save script") }
                     }
                     if (history.isNotEmpty()) {
                         Text("History", style = MaterialTheme.typography.labelSmall)
-                        Column(Modifier.fillMaxWidth()) {
-                            history.take(8).forEach { h ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.small),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            history.take(4).forEach { h ->
                                 SurfaceChip(selected = false, label = h) { command = h }
                             }
                         }
@@ -101,10 +112,10 @@ fun ConsoleScreen(onBack: () -> Unit) {
 
             if (scripts.isNotEmpty()) {
                 GlassSurface(Modifier.fillMaxWidth()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.small)) {
                         SectionHeader("Saved scripts", "tap to run")
                         scripts.forEach { s ->
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f).clickable { command = s.commands; runCmd() }) {
                                     Text(s.name, style = MaterialTheme.typography.titleSmall)
                                     Text(s.commands.take(60), style = MaterialTheme.typography.bodySmall)
@@ -120,7 +131,7 @@ fun ConsoleScreen(onBack: () -> Unit) {
                 Column(
                     Modifier.fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(8.dp)
+                        .padding(AppSpacing.small)
                 ) {
                     Text(
                         output.ifBlank { "Output will appear here." },
